@@ -470,6 +470,24 @@ function EmployeeScreen({ user, records, onRecord, onLogout, showToast }) {
               ⏱ Ore oggi: <strong>{todayH}h</strong>
               {checkedIn&&lastIn&&<> · entrato alle <strong>{fmtT(lastIn.time)}</strong></>}
             </div>
+            {checkedIn&&lastIn&&(
+              <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10,padding:"10px 14px",fontSize:12,color:"#166534",marginBottom:18,lineHeight:1.6}}>
+                <div>📅 <strong>{fmtD(lastIn.time)}</strong></div>
+                <div>🕐 Entrata: <strong>{fmtT(lastIn.time)}</strong></div>
+                {lastIn.location && lastIn.location !== "Sede principale" && (
+                  <div>📍 <a href={`https://maps.google.com/?q=${lastIn.location}`} target="_blank" rel="noreferrer" style={{color:"#15803d",fontWeight:600}}>{lastIn.location}</a></div>
+                )}
+                {(!lastIn.location || lastIn.location === "Sede principale") && (
+                  <div>📍 Sede principale</div>
+                )}
+              </div>
+            )}
+            {!checkedIn&&todayRecs.length>0&&(
+              <div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:10,padding:"10px 14px",fontSize:12,color:"#991b1b",marginBottom:18,lineHeight:1.6}}>
+                <div>📅 Ultima timbratura: <strong>{fmtD(todayRecs[0].time)}</strong></div>
+                <div>🕐 Uscita: <strong>{fmtT(todayRecs[0].time)}</strong></div>
+              </div>
+            )}
             <button className={`emp-action-btn ${checkedIn?"out":"in"}`} onClick={handle}>
               {checkedIn?"⏹ Registra Uscita":"▶ Registra Entrata"}
             </button>
@@ -747,10 +765,7 @@ function EmpModal({ emp, onSave, onClose }) {
           <div className="f-field"><span className="f-lbl">Email</span><input className="f-inp" type="email" value={f.email} onChange={e=>set("email",e.target.value)} placeholder="m@azienda.it"/></div>
           <div className="f-field"><span className="f-lbl">Telefono</span><input className="f-inp" value={f.phone} onChange={e=>set("phone",e.target.value)} placeholder="333 0000000"/></div>
         </div>
-        <div className="f-row">
-          <div className="f-field"><span className="f-lbl">Ore/giorno target</span><input className="f-inp" type="number" min="1" max="12" value={f.target} onChange={e=>set("target",Number(e.target.value))}/></div>
-          <div className="f-field"><span className="f-lbl">Colore accento</span><input className="f-inp" type="color" value={f.color} onChange={e=>set("color",e.target.value)} style={{height:38,padding:"3px 6px",cursor:"pointer"}}/></div>
-        </div>
+        <div className="f-field"><span className="f-lbl">Colore accento</span><input className="f-inp" type="color" value={f.color} onChange={e=>set("color",e.target.value)} style={{height:38,padding:"3px 6px",cursor:"pointer"}}/></div>
         <div className="modal-btns">
           <button className="m-btn cx" onClick={onClose}>Annulla</button>
           <button className="m-btn ok" onClick={save}>{isNew?"Crea Dipendente":"Salva Modifiche"}</button>
@@ -764,6 +779,28 @@ function EmpModal({ emp, onSave, onClose }) {
 function AdminDipendenti({ employees, records, onAdd, onEdit, onDelete }) {
   const [modal,   setModal]   = useState(null);
   const [confirm, setConfirm] = useState(null);
+  const [detail,  setDetail]  = useState(null); // emp per il pannello dettaglio
+
+  // Raggruppa timbrature per giorno per un dipendente
+  function getDailyHours(empId) {
+    const recs = records.filter(r => r.empId===empId).sort((a,b)=>a.time-b.time);
+    const days = {};
+    let lastIn = null;
+    recs.forEach(r => {
+      const day = fmtD(r.time);
+      if (!days[day]) days[day] = { inTime: null, outTime: null, hours: 0, entries: [] };
+      days[day].entries.push(r);
+      if (r.type==="in") { lastIn = r.time; if (!days[day].inTime) days[day].inTime = r.time; }
+      else if (r.type==="out" && lastIn) {
+        days[day].hours += (r.time - lastIn) / 3600000;
+        days[day].outTime = r.time;
+        lastIn = null;
+      }
+    });
+    // round hours
+    Object.values(days).forEach(d => { d.hours = Math.round(d.hours*10)/10; });
+    return Object.entries(days).sort((a,b) => new Date(b[0].split("/").reverse().join("-")) - new Date(a[0].split("/").reverse().join("-")));
+  }
 
   return <>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
@@ -785,13 +822,13 @@ function AdminDipendenti({ employees, records, onAdd, onEdit, onDelete }) {
             </div>
           </div>
           <div className="emp-c-stats">
-            {[["Oggi",`${todH}h`],["Sett.",`${wkH}h`],["Target",`${emp.target}h`]].map(([l,v])=>(
+            {[["Oggi",`${todH}h`],["Settimana",`${wkH}h`]].map(([l,v])=>(
               <div key={l} className="ecs"><div className="ecs-l">{l}</div><div className="ecs-v">{v}</div></div>
             ))}
           </div>
           {emp.email&&<div style={{fontSize:11,color:"#9ca3af",marginBottom:6}}>✉ {emp.email}</div>}
-          <div className="prog-w"><div className="prog" style={{width:`${Math.min(todH/emp.target*100,100)}%`,background:todH>=emp.target?"#22c55e":"#2563eb"}}/></div>
           <div className="emp-c-btns">
+            <button className="ec-btn" onClick={()=>setDetail(emp)}>📋 Dettaglio</button>
             <button className="ec-btn" onClick={()=>setModal(emp)}>✏️ Modifica</button>
             <button className="ec-btn del" onClick={()=>setConfirm(emp)}>🗑 Elimina</button>
           </div>
@@ -800,6 +837,46 @@ function AdminDipendenti({ employees, records, onAdd, onEdit, onDelete }) {
     </div>
 
     {modal&&<EmpModal emp={modal==="new"?null:modal} onSave={d=>{modal==="new"?onAdd(d):onEdit(d);setModal(null);}} onClose={()=>setModal(null)}/>}
+
+    {detail&&(
+      <div className="modal-ov" onClick={e=>e.target===e.currentTarget&&setDetail(null)}>
+        <div className="modal-box" style={{maxWidth:480}}>
+          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:18}}>
+            <div style={{fontSize:32}}>{detail.avatar}</div>
+            <div>
+              <div style={{fontWeight:800,fontSize:17,color:"#111827"}}>{detail.name}</div>
+              <div style={{fontSize:12,color:"#9ca3af"}}>{detail.role} · {detail.dept}</div>
+            </div>
+            <button onClick={()=>setDetail(null)} style={{marginLeft:"auto",background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9ca3af"}}>×</button>
+          </div>
+          <div style={{fontWeight:700,fontSize:13,color:"#6b7280",textTransform:"uppercase",letterSpacing:".5px",marginBottom:10}}>Ore per giornata</div>
+          <div style={{maxHeight:400,overflowY:"auto"}}>
+            {getDailyHours(detail.id).length===0 && <div style={{color:"#9ca3af",fontSize:13,textAlign:"center",padding:"20px 0"}}>Nessuna timbratura</div>}
+            {getDailyHours(detail.id).map(([day, d])=>(
+              <div key={day} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 0",borderBottom:"1px solid #f3f4f6"}}>
+                <div>
+                  <div style={{fontWeight:600,fontSize:14,color:"#111827"}}>{day}</div>
+                  <div style={{fontSize:12,color:"#9ca3af",marginTop:2}}>
+                    {d.inTime && <span style={{color:"#15803d"}}>▶ {fmtT(d.inTime)}</span>}
+                    {d.outTime && <span style={{color:"#dc2626",marginLeft:10}}>⏹ {fmtT(d.outTime)}</span>}
+                    {!d.outTime && d.inTime && <span style={{color:"#f59e0b",marginLeft:10}}>ancora in sede</span>}
+                  </div>
+                </div>
+                <div style={{fontWeight:800,fontSize:22,color: d.hours>=8?"#15803d":d.hours>0?"#2563eb":"#9ca3af",letterSpacing:"-1px"}}>
+                  {d.hours>0 ? `${d.hours}h` : "—"}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{marginTop:14,paddingTop:14,borderTop:"1.5px solid #e5e7eb",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontSize:13,color:"#6b7280",fontWeight:600}}>Totale periodo</span>
+            <span style={{fontSize:20,fontWeight:800,color:"#2563eb"}}>
+              {Math.round(getDailyHours(detail.id).reduce((s,[,d])=>s+d.hours,0)*10)/10}h
+            </span>
+          </div>
+        </div>
+      </div>
+    )}
 
     {confirm&&(
       <div className="modal-ov" onClick={e=>e.target===e.currentTarget&&setConfirm(null)}>
