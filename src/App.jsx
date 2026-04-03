@@ -1,4 +1,45 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+
+/* ─── SUPABASE ───────────────────────────────────────────────────────── */
+const SUPA_URL = "https://ywrbatklgymaziosucuo.supabase.co";
+const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl3cmJhdGtsZ3ltYXppb3N1Y3VvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyMzk4NzAsImV4cCI6MjA5MDgxNTg3MH0.euAYuj4cTvd3M3mgQSKQPnlarLZvZssjpnhki79mdpM";
+const H = { "Content-Type": "application/json", "apikey": SUPA_KEY, "Authorization": "Bearer " + SUPA_KEY };
+
+async function sbFetch(path, opts={}) {
+  const res = await fetch(SUPA_URL + "/rest/v1/" + path, { ...opts, headers: { ...H, ...opts.headers } });
+  if (!res.ok) { const e = await res.text(); console.error("Supabase error:", e); return null; }
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
+}
+
+// ── Dipendenti
+async function dbLoadEmployees() {
+  const data = await sbFetch("dipendenti?select=*&order=name");
+  if (!data) return null;
+  return data.map(r => ({ id: r.id, name: r.name, role: r.role||"", dept: r.dept||"", pin: r.pin, email: r.email||"", phone: r.phone||"", avatar: r.avatar||"👤", target: r.target||8, color: r.color||"#2563eb" }));
+}
+async function dbInsertEmployee(emp) {
+  return sbFetch("dipendenti", { method:"POST", headers:{"Prefer":"return=representation"}, body: JSON.stringify({ id:emp.id, name:emp.name, role:emp.role, dept:emp.dept, pin:emp.pin, email:emp.email, phone:emp.phone, avatar:emp.avatar, target:emp.target, color:emp.color }) });
+}
+async function dbUpdateEmployee(emp) {
+  return sbFetch(`dipendenti?id=eq.${emp.id}`, { method:"PATCH", headers:{"Prefer":"return=representation"}, body: JSON.stringify({ name:emp.name, role:emp.role, dept:emp.dept, pin:emp.pin, email:emp.email, phone:emp.phone, avatar:emp.avatar, target:emp.target, color:emp.color }) });
+}
+async function dbDeleteEmployee(id) {
+  return sbFetch(`dipendenti?id=eq.${id}`, { method:"DELETE" });
+}
+
+// ── Timbrature
+async function dbLoadRecords() {
+  const data = await sbFetch("timbrature?select=*&order=time.desc&limit=2000");
+  if (!data) return null;
+  return data.map(r => ({ id: r.id, empId: r.emp_id, type: r.type, time: new Date(r.time), location: r.location||"Sede principale" }));
+}
+async function dbInsertRecord(rec) {
+  return sbFetch("timbrature", { method:"POST", body: JSON.stringify({ id: String(rec.id), emp_id: rec.empId, type: rec.type, time: rec.time.toISOString(), location: rec.location }) });
+}
+async function dbDeleteRecord(id) {
+  return sbFetch(`timbrature?id=eq.${id}`, { method:"DELETE" });
+}
 
 /* ─── GOOGLE FONTS ───────────────────────────────────────────────────── */
 const FONT_IMPORT = `@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');`;
@@ -597,9 +638,10 @@ function AdminRegistro({ records, setRecords, employees }) {
     return true;
   }).slice(0,300);
 
-  const deleteRecord = id => {
+  const deleteRecord = async id => {
     setRecords(prev => prev.filter(r => r.id !== id));
     setDelConfirm(null);
+    await dbDeleteRecord(id);
   };
 
   return <>
@@ -805,16 +847,61 @@ function AdminShell({ employees, records, setRecords, onLogout, onAdd, onEdit, o
 
 /* ─── ROOT ───────────────────────────────────────────────────────────── */
 export default function App() {
-  const [employees, setEmployees] = useState(INIT_EMPLOYEES);
-  const [records,   setRecords  ] = useState(() => genHistory(INIT_EMPLOYEES));
+  const [employees, setEmployees] = useState([]);
+  const [records,   setRecords  ] = useState([]);
+  const [loading,   setLoading  ] = useState(true);
   const [user,      setUser     ] = useState(null);
   const [toast,     setToast    ] = useState(null);
 
+  // Load all data from Supabase on startup
+  useEffect(() => {
+    async function init() {
+      setLoading(true);
+      const [emps, recs] = await Promise.all([dbLoadEmployees(), dbLoadRecords()]);
+      if (emps) setEmployees(emps);
+      if (recs) setRecords(recs);
+      setLoading(false);
+    }
+    init();
+  }, []);
+
   const showToast = (msg, type="ok") => setToast({msg, type, k: Date.now()});
-  const addRecord  = r => setRecords(p => [r, ...p]);
-  const addEmp     = e => { setEmployees(p=>[...p,e]); showToast(`${e.name} aggiunto`); };
-  const editEmp    = e => { setEmployees(p=>p.map(x=>x.id===e.id?e:x)); showToast("Modifiche salvate"); };
-  const deleteEmp  = id => { setEmployees(p=>p.filter(x=>x.id!==id)); showToast("Dipendente eliminato"); };
+
+  const addRecord = async (rec) => {
+    setRecords(p => [rec, ...p]); // optimistic update
+    await dbInsertRecord(rec);
+  };
+
+  const addEmp = async (emp) => {
+    setEmployees(p => [...p, emp]);
+    await dbInsertEmployee(emp);
+    showToast(`${emp.name} aggiunto`);
+  };
+
+  const editEmp = async (emp) => {
+    setEmployees(p => p.map(x => x.id===emp.id ? emp : x));
+    await dbUpdateEmployee(emp);
+    showToast("Modifiche salvate");
+  };
+
+  const deleteEmp = async (id) => {
+    setEmployees(p => p.filter(x => x.id!==id));
+    await dbDeleteEmployee(id);
+    showToast("Dipendente eliminato");
+  };
+
+  if (loading) return (
+    <div>
+      <style>{css}</style>
+      <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:"#f0f2f5",gap:16}}>
+        <div style={{fontSize:36}}>🏢</div>
+        <div style={{fontSize:18,fontWeight:700,color:"#111827",fontFamily:"Inter,sans-serif"}}>Presenze</div>
+        <div style={{fontSize:13,color:"#9ca3af",fontFamily:"Inter,sans-serif"}}>Caricamento in corso...</div>
+        <div style={{width:40,height:40,border:"3px solid #e5e7eb",borderTop:"3px solid #2563eb",borderRadius:"50%",animation:"spin 1s linear infinite"}}/>
+        <style>{"@keyframes spin{to{transform:rotate(360deg)}}"}</style>
+      </div>
+    </div>
+  );
 
   return (
     <div>
