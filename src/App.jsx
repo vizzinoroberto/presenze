@@ -16,13 +16,13 @@ async function sbFetch(path, opts={}) {
 async function dbLoadEmployees() {
   const data = await sbFetch("dipendenti?select=*&order=name");
   if (!data) return null;
-  return data.map(r => ({ id: r.id, name: r.name, role: r.role||"", dept: r.dept||"", pin: r.pin, email: r.email||"", phone: r.phone||"", avatar: r.avatar||"👤", target: r.target||8, color: r.color||"#2563eb" }));
+  return data.map(r => ({ id: r.id, name: r.name, role: r.role||"", dept: r.dept||"", pin: r.pin, email: r.email||"", phone: r.phone||"", avatar: r.avatar||"👤", target: r.target||8, color: r.color||"#2563eb", in_turni: r.in_turni || false }));
 }
 async function dbInsertEmployee(emp) {
-  return sbFetch("dipendenti", { method:"POST", headers:{"Prefer":"return=representation"}, body: JSON.stringify({ id:emp.id, name:emp.name, role:emp.role, dept:emp.dept, pin:emp.pin, email:emp.email, phone:emp.phone, avatar:emp.avatar, target:emp.target, color:emp.color }) });
+  return sbFetch("dipendenti", { method:"POST", headers:{"Prefer":"return=representation"}, body: JSON.stringify({ id:emp.id, name:emp.name, role:emp.role, dept:emp.dept, pin:emp.pin, email:emp.email, phone:emp.phone, avatar:emp.avatar, target:emp.target, color:emp.color, in_turni:emp.in_turni||false }) });
 }
 async function dbUpdateEmployee(emp) {
-  return sbFetch(`dipendenti?id=eq.${emp.id}`, { method:"PATCH", headers:{"Prefer":"return=representation"}, body: JSON.stringify({ name:emp.name, role:emp.role, dept:emp.dept, pin:emp.pin, email:emp.email, phone:emp.phone, avatar:emp.avatar, target:emp.target, color:emp.color }) });
+  return sbFetch(`dipendenti?id=eq.${emp.id}`, { method:"PATCH", headers:{"Prefer":"return=representation"}, body: JSON.stringify({ name:emp.name, role:emp.role, dept:emp.dept, pin:emp.pin, email:emp.email, phone:emp.phone, avatar:emp.avatar, target:emp.target, color:emp.color, in_turni:emp.in_turni||false }) });
 }
 async function dbDeleteEmployee(id) {
   return sbFetch(`dipendenti?id=eq.${id}`, { method:"DELETE" });
@@ -39,6 +39,63 @@ async function dbInsertRecord(rec) {
 }
 async function dbDeleteRecord(id) {
   return sbFetch(`timbrature?id=eq.${id}`, { method:"DELETE" });
+}
+
+// ── Turni
+async function dbLoadTurni() {
+  const data = await sbFetch("turni?select=*");
+  if (!data) return {};
+  const map = {};
+  data.forEach(r => { map[r.chiave] = r.valore; });
+  return map;
+}
+async function dbSetTurno(chiave, valore) {
+  if (!valore) return sbFetch(`turni?chiave=eq.${encodeURIComponent(chiave)}`, { method:"DELETE" });
+  return sbFetch("turni", { method:"POST", headers:{"Prefer":"resolution=merge-duplicates,return=minimal"}, body: JSON.stringify({ chiave, valore }) });
+}
+async function dbLoadNoteSettimana() {
+  const data = await sbFetch("note_settimana?select=*");
+  if (!data) return {};
+  const map = {};
+  data.forEach(r => { map[r.settimana] = r.testo; });
+  return map;
+}
+async function dbSetNota(settimana, testo) {
+  if (!testo) return sbFetch(`note_settimana?settimana=eq.${settimana}`, { method:"DELETE" });
+  return sbFetch("note_settimana", { method:"POST", headers:{"Prefer":"resolution=merge-duplicates,return=minimal"}, body: JSON.stringify({ settimana, testo }) });
+}
+
+/* ─── TURNI CONSTANTS ──────────────────────────────────────────────────── */
+const PRANZO_OPTIONS = [
+  { v:"",  l:"—"    },
+  { v:"Q", l:"11:30"},
+  { v:"W", l:"12:00"},
+  { v:"F", l:"Ferie"},
+];
+const CENA_OPTIONS = [
+  { v:"",  l:"—"    },
+  { v:"1", l:"18:00"},
+  { v:"3", l:"18:30"},
+  { v:"5", l:"19:00"},
+  { v:"6", l:"19:30"},
+  { v:"F", l:"Ferie"},
+];
+
+function toDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+function getMonday(d) {
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  const mon = new Date(d);
+  mon.setDate(d.getDate() + diff);
+  mon.setHours(0,0,0,0);
+  return mon;
+}
+function shiftLabel(tipo, val) {
+  if (!val) return "—";
+  const opts = tipo === "pranzo" ? PRANZO_OPTIONS : CENA_OPTIONS;
+  return opts.find(o => o.v === val)?.l || val;
 }
 
 /* ─── GOOGLE FONTS ───────────────────────────────────────────────────── */
@@ -388,6 +445,30 @@ tr:hover td { background: #f9fafb; }
   .topbar { padding: 10px 12px; }
   .fi { min-width: 0; flex: 1; }
 }
+
+/* ── TURNI GRID ── */
+.week-nav { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+.week-nav-btn { padding:6px 12px; border-radius:8px; border:1.5px solid #e5e7eb; background:#fff; color:#374151; font-family:'Inter',sans-serif; font-size:12px; font-weight:600; cursor:pointer; transition:all .12s; }
+.week-nav-btn:hover { background:#f3f4f6; }
+.week-label { flex:1; text-align:center; font-size:13px; font-weight:700; color:#111827; }
+.turni-scroll { overflow-x:auto; }
+.turni-table { width:100%; border-collapse:collapse; font-size:12px; }
+.turni-table th { padding:8px 5px; text-align:center; font-size:10px; font-weight:700; color:#6b7280; text-transform:uppercase; letter-spacing:.3px; background:#f9fafb; border-bottom:1.5px solid #e5e7eb; white-space:nowrap; }
+.turni-table th.emp-col { text-align:left; min-width:110px; }
+.turni-table td { padding:4px 3px; border-bottom:1px solid #f3f4f6; vertical-align:middle; }
+.turni-table td.emp-cell { text-align:left; font-weight:700; color:#111827; padding:5px 10px; background:#fff; }
+.turni-table td.tipo-cell { font-size:10px; font-weight:700; text-align:center; padding:5px 4px; white-space:nowrap; }
+.turni-table tr.pranzo-row td:not(.emp-cell) { background:#fefce8; }
+.turni-table tr.cena-row td:not(.emp-cell) { background:#eff6ff; border-bottom:3px solid #e5e7eb; }
+.turni-select { width:100%; padding:3px 2px; border:1.5px solid #d1d5db; border-radius:5px; font-family:'Inter',sans-serif; font-size:11px; cursor:pointer; min-width:52px; }
+.turni-select:focus { outline:none; border-color:#2563eb; }
+.turni-badge { display:inline-block; padding:3px 7px; border-radius:5px; font-size:11px; font-weight:700; white-space:nowrap; }
+.turni-badge.libre { color:#9ca3af; }
+.turni-badge.turno { background:#dcfce7; color:#15803d; }
+.turni-badge.ferie { background:#fee2e2; color:#dc2626; }
+.turni-note { width:100%; border:1.5px solid #e5e7eb; border-radius:8px; padding:10px 12px; font-family:'Inter',sans-serif; font-size:13px; color:#111827; resize:vertical; min-height:56px; margin-top:12px; }
+.turni-note:focus { outline:none; border-color:#2563eb; }
+.turni-in-badge { display:inline-block; padding:2px 7px; border-radius:10px; font-size:10px; font-weight:700; background:#ede9fe; color:#7c3aed; margin-left:4px; vertical-align:middle; }
 `;
 
 /* ─── AVATARS ────────────────────────────────────────────────────────── */
@@ -574,7 +655,7 @@ function LoginScreen({ employees, onLogin }) {
 }
 
 /* ── EMPLOYEE SCREEN ── */
-function EmployeeScreen({ user, records, onRecord, onLogout, showToast }) {
+function EmployeeScreen({ user, records, onRecord, onLogout, showToast, turni }) {
   const [tab, setTab] = useState("home");
   const [checkedIn, setCheckedIn] = useState(() => isCheckedIn(records, user.id));
   const [now, setNow] = useState(new Date());
@@ -614,6 +695,7 @@ function EmployeeScreen({ user, records, onRecord, onLogout, showToast }) {
         <div className="tmb-tabs">
           <button className={`tmb-tab ${tab==="home"?"active":""}`} onClick={()=>setTab("home")}>⏱ Timbratura</button>
           <button className={`tmb-tab ${tab==="registro"?"active":""}`} onClick={()=>setTab("registro")}>📋 Registro</button>
+          {user.in_turni && <button className={`tmb-tab ${tab==="turni"?"active":""}`} onClick={()=>setTab("turni")}>📅 Turni</button>}
         </div>
         <button onClick={onLogout} style={{background:"none",border:"none",fontSize:12,color:"#9ca3af",cursor:"pointer",fontFamily:"Inter,sans-serif",fontWeight:600}}>← Esci</button>
       </div>
@@ -681,6 +763,8 @@ function EmployeeScreen({ user, records, onRecord, onLogout, showToast }) {
           <RiepilogoPeriodo records={records} employees={[]} filterEmpId={user.id} from={regFrom} to={regTo}/>
         </div>
       )}
+
+      {tab === "turni" && user.in_turni && <TurniEmployee user={user} turni={turni}/>}
     </div>
   );
 }
@@ -775,7 +859,7 @@ function AdminRegistro({ records, employees }) {
 /* ── EMPLOYEE MODAL ── */
 function EmpModal({ emp, onSave, onClose }) {
   const isNew = !emp;
-  const [f, setF] = useState(emp?{...emp}:{name:"",role:"",dept:"",pin:"",email:"",phone:"",avatar:"👤",target:8,color:"#2563eb"});
+  const [f, setF] = useState(emp?{...emp}:{name:"",role:"",dept:"",pin:"",email:"",phone:"",avatar:"👤",target:8,color:"#2563eb",in_turni:false});
   const set = (k,v) => setF(x=>({...x,[k]:v}));
   const save = () => { if(!f.name.trim()||!f.pin.trim()) return; onSave(isNew?{...f,id:Date.now()}:f); };
 
@@ -802,6 +886,15 @@ function EmpModal({ emp, onSave, onClose }) {
           <div className="f-field"><span className="f-lbl">Telefono</span><input className="f-inp" value={f.phone} onChange={e=>set("phone",e.target.value)} placeholder="333 0000000"/></div>
         </div>
         <div className="f-field"><span className="f-lbl">Colore accento</span><input className="f-inp" type="color" value={f.color} onChange={e=>set("color",e.target.value)} style={{height:38,padding:"3px 6px",cursor:"pointer"}}/></div>
+        <div className="f-field">
+          <label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",userSelect:"none",padding:"10px 12px",background:f.in_turni?"#ede9fe":"#f9fafb",border:`1.5px solid ${f.in_turni?"#c4b5fd":"#e5e7eb"}`,borderRadius:9,transition:"all .12s"}}>
+            <input type="checkbox" checked={!!f.in_turni} onChange={e=>set("in_turni",e.target.checked)} style={{width:16,height:16,cursor:"pointer",accentColor:"#7c3aed"}}/>
+            <div>
+              <div style={{fontSize:13,fontWeight:600,color:"#111827"}}>Includi nei Turni</div>
+              <div style={{fontSize:11,color:"#9ca3af"}}>Il dipendente apparirà nella griglia turni</div>
+            </div>
+          </label>
+        </div>
         <div className="modal-btns">
           <button className="m-btn cx" onClick={onClose}>Annulla</button>
           <button className="m-btn ok" onClick={save}>{isNew?"Crea Dipendente":"Salva Modifiche"}</button>
@@ -854,7 +947,10 @@ function AdminDipendenti({ employees, records, onAdd, onEdit, onDelete }) {
             <div style={{flex:1}}>
               <div className="emp-c-name">{emp.name}</div>
               <div className="emp-c-meta">{emp.role} · {emp.dept}</div>
-              <div style={{marginTop:4}}><span className={`badge ${ci?"in":"out"}`}><span className="bd"/>{ci?"In sede":"Assente"}</span></div>
+              <div style={{marginTop:4,display:"flex",gap:4,flexWrap:"wrap"}}>
+                <span className={`badge ${ci?"in":"out"}`}><span className="bd"/>{ci?"In sede":"Assente"}</span>
+                {emp.in_turni && <span className="turni-in-badge">Turni</span>}
+              </div>
             </div>
           </div>
           <div className="emp-c-stats">
@@ -1042,8 +1138,148 @@ ${days.map(d=>`<tr><td>${d.day}</td><td class="h-col">${d.hours>0?d.hours+"h":"�
   </>;
 }
 
+/* ── TURNI ADMIN ── */
+function TurniAdmin({ employees, turni, onSetTurno, noteSettimana, onSetNota }) {
+  const [weekStart, setWeekStart] = useState(() => getMonday(new Date()));
+  const [noteLocal, setNoteLocal] = useState(null);
+
+  const turniEmps = employees.filter(e => e.in_turni);
+  const days = Array.from({length:7}, (_,i) => { const d=new Date(weekStart); d.setDate(weekStart.getDate()+i); return d; });
+  const weekKey = toDateStr(weekStart);
+  const nota = noteLocal !== null ? noteLocal : (noteSettimana[weekKey] || "");
+
+  const prevWeek = () => { const d=new Date(weekStart); d.setDate(d.getDate()-7); setWeekStart(d); setNoteLocal(null); };
+  const nextWeek = () => { const d=new Date(weekStart); d.setDate(d.getDate()+7); setWeekStart(d); setNoteLocal(null); };
+
+  const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate()+6);
+  const weekLabel = `${weekStart.toLocaleDateString("it-IT",{day:"2-digit",month:"long"})} – ${weekEnd.toLocaleDateString("it-IT",{day:"2-digit",month:"long",year:"numeric"})}`;
+
+  return <>
+    <div style={{fontWeight:800,fontSize:20,color:"#111827",marginBottom:14,letterSpacing:"-.3px"}}>Turni</div>
+    <div className="week-nav">
+      <button className="week-nav-btn" onClick={prevWeek}>← Prec</button>
+      <div className="week-label">{weekLabel}</div>
+      <button className="week-nav-btn" onClick={nextWeek}>Succ →</button>
+    </div>
+    {turniEmps.length === 0 ? (
+      <div style={{textAlign:"center",padding:"40px 20px",color:"#9ca3af"}}>
+        <div style={{fontSize:36,marginBottom:10}}>📅</div>
+        <div style={{fontWeight:600,fontSize:14}}>Nessun dipendente abilitato ai turni.<br/>Attiva "Includi nei Turni" nel pannello Dipendenti.</div>
+      </div>
+    ) : (
+      <div className="card" style={{padding:0,overflow:"hidden"}}>
+        <div className="turni-scroll">
+          <table className="turni-table">
+            <thead>
+              <tr>
+                <th className="emp-col">Dipendente</th>
+                <th style={{minWidth:36,width:36}}>T</th>
+                {days.map(d=><th key={toDateStr(d)} style={{minWidth:68}}>
+                  {d.toLocaleDateString("it-IT",{weekday:"short"}).toUpperCase()} {d.getDate()}
+                </th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {turniEmps.map(emp=>[
+                <tr key={`${emp.id}-p`} className="pranzo-row">
+                  <td className="emp-cell" rowSpan={2} style={{verticalAlign:"middle"}}>{emp.avatar} {emp.name}</td>
+                  <td className="tipo-cell" style={{color:"#854d0e"}}>☀<br/>P</td>
+                  {days.map(d=>{
+                    const ds=toDateStr(d); const chiave=`${emp.id}::${ds}::pranzo`; const val=turni[chiave]||"";
+                    return <td key={ds} style={{padding:"3px"}}>
+                      <select className="turni-select" value={val} onChange={e=>onSetTurno(chiave,e.target.value)}>
+                        {PRANZO_OPTIONS.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
+                      </select>
+                    </td>;
+                  })}
+                </tr>,
+                <tr key={`${emp.id}-c`} className="cena-row">
+                  <td className="tipo-cell" style={{color:"#1d4ed8"}}>🌙<br/>C</td>
+                  {days.map(d=>{
+                    const ds=toDateStr(d); const chiave=`${emp.id}::${ds}::cena`; const val=turni[chiave]||"";
+                    return <td key={ds} style={{padding:"3px"}}>
+                      <select className="turni-select" value={val} onChange={e=>onSetTurno(chiave,e.target.value)}>
+                        {CENA_OPTIONS.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
+                      </select>
+                    </td>;
+                  })}
+                </tr>
+              ])}
+            </tbody>
+          </table>
+        </div>
+        <div style={{padding:"12px 16px",borderTop:"1px solid #f3f4f6"}}>
+          <div style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:".5px"}}>Note settimana</div>
+          <textarea className="turni-note" value={nota}
+            onChange={e=>setNoteLocal(e.target.value)}
+            onBlur={()=>{ if(noteLocal!==null){ onSetNota(weekKey,noteLocal); setNoteLocal(null); } }}
+            placeholder="Aggiungi una nota per questa settimana..."/>
+        </div>
+      </div>
+    )}
+  </>;
+}
+
+/* ── TURNI EMPLOYEE ── */
+function TurniEmployee({ user, turni }) {
+  const [weekStart, setWeekStart] = useState(() => getMonday(new Date()));
+  const days = Array.from({length:7}, (_,i) => { const d=new Date(weekStart); d.setDate(weekStart.getDate()+i); return d; });
+
+  const prevWeek = () => { const d=new Date(weekStart); d.setDate(d.getDate()-7); setWeekStart(d); };
+  const nextWeek = () => { const d=new Date(weekStart); d.setDate(d.getDate()+7); setWeekStart(d); };
+
+  const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate()+6);
+  const weekLabel = `${weekStart.toLocaleDateString("it-IT",{day:"2-digit",month:"long"})} – ${weekEnd.toLocaleDateString("it-IT",{day:"2-digit",month:"long",year:"numeric"})}`;
+
+  return (
+    <div className="reg-outer">
+      <div className="week-nav">
+        <button className="week-nav-btn" onClick={prevWeek}>← Prec</button>
+        <div className="week-label">{weekLabel}</div>
+        <button className="week-nav-btn" onClick={nextWeek}>Succ →</button>
+      </div>
+      <div className="card" style={{padding:0,overflow:"hidden"}}>
+        <div className="turni-scroll">
+          <table className="turni-table">
+            <thead>
+              <tr>
+                <th style={{minWidth:60,textAlign:"left",paddingLeft:10}}>Turno</th>
+                {days.map(d=><th key={toDateStr(d)} style={{minWidth:68}}>
+                  {d.toLocaleDateString("it-IT",{weekday:"short"}).toUpperCase()} {d.getDate()}
+                </th>)}
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="pranzo-row">
+                <td className="tipo-cell" style={{color:"#854d0e",textAlign:"left",paddingLeft:10}}>☀ Pranzo</td>
+                {days.map(d=>{
+                  const ds=toDateStr(d); const val=turni[`${user.id}::${ds}::pranzo`]||"";
+                  const label=shiftLabel("pranzo",val);
+                  return <td key={ds} style={{textAlign:"center",padding:"6px 3px"}}>
+                    <span className={`turni-badge ${val==="F"?"ferie":val?"turno":"libre"}`}>{label}</span>
+                  </td>;
+                })}
+              </tr>
+              <tr className="cena-row">
+                <td className="tipo-cell" style={{color:"#1d4ed8",textAlign:"left",paddingLeft:10}}>🌙 Cena</td>
+                {days.map(d=>{
+                  const ds=toDateStr(d); const val=turni[`${user.id}::${ds}::cena`]||"";
+                  const label=shiftLabel("cena",val);
+                  return <td key={ds} style={{textAlign:"center",padding:"6px 3px"}}>
+                    <span className={`turni-badge ${val==="F"?"ferie":val?"turno":"libre"}`}>{label}</span>
+                  </td>;
+                })}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── ADMIN SHELL ── */
-function AdminShell({ employees, records, setRecords, onLogout, onAdd, onEdit, onDelete }) {
+function AdminShell({ employees, records, setRecords, onLogout, onAdd, onEdit, onDelete, turni, onSetTurno, noteSettimana, onSetNota }) {
   const [tab, setTab] = useState("dashboard");
   return (
     <div className="app">
@@ -1051,7 +1287,7 @@ function AdminShell({ employees, records, setRecords, onLogout, onAdd, onEdit, o
         <div className="topbar-inner">
           <div className="topbar-brand"><div className="topbar-brand-dot"/>Presenze</div>
           <div className="tab-nav">
-            {[["dashboard","Dashboard"],["registro","Registro"],["dipendenti","Dipendenti"],["pdf","PDF"]].map(([id,l])=>(
+            {[["dashboard","Dashboard"],["registro","Registro"],["dipendenti","Dipendenti"],["turni","Turni"],["pdf","PDF"]].map(([id,l])=>(
               <button key={id} className={`tab-btn ${tab===id?"active":""}`} onClick={()=>setTab(id)}>{l}</button>
             ))}
           </div>
@@ -1065,6 +1301,7 @@ function AdminShell({ employees, records, setRecords, onLogout, onAdd, onEdit, o
         {tab==="dashboard"  && <AdminDashboard records={records} employees={employees}/>}
         {tab==="registro"   && <AdminRegistro  records={records} employees={employees}/>}
         {tab==="dipendenti" && <AdminDipendenti employees={employees} records={records} onAdd={onAdd} onEdit={onEdit} onDelete={onDelete}/>}
+        {tab==="turni"      && <TurniAdmin employees={employees} turni={turni} onSetTurno={onSetTurno} noteSettimana={noteSettimana} onSetNota={onSetNota}/>}
         {tab==="pdf"        && <AdminPDF        records={records} employees={employees}/>}
       </div>
     </div>
@@ -1073,23 +1310,39 @@ function AdminShell({ employees, records, setRecords, onLogout, onAdd, onEdit, o
 
 /* ─── ROOT ───────────────────────────────────────────────────────────── */
 export default function App() {
-  const [employees, setEmployees] = useState([]);
-  const [records,   setRecords  ] = useState([]);
-  const [loading,   setLoading  ] = useState(true);
-  const [user,      setUser     ] = useState(null);
-  const [toast,     setToast    ] = useState(null);
+  const [employees,     setEmployees    ] = useState([]);
+  const [records,       setRecords      ] = useState([]);
+  const [turni,         setTurni        ] = useState({});
+  const [noteSettimana, setNoteSettimana] = useState({});
+  const [loading,       setLoading      ] = useState(true);
+  const [user,          setUser         ] = useState(null);
+  const [toast,         setToast        ] = useState(null);
 
   // Load all data from Supabase on startup
   useEffect(() => {
     async function init() {
       setLoading(true);
-      const [emps, recs] = await Promise.all([dbLoadEmployees(), dbLoadRecords()]);
+      const [emps, recs, trn, note] = await Promise.all([
+        dbLoadEmployees(), dbLoadRecords(), dbLoadTurni(), dbLoadNoteSettimana()
+      ]);
       if (emps) setEmployees(emps);
       if (recs) setRecords(recs);
+      if (trn)  setTurni(trn);
+      if (note) setNoteSettimana(note);
       setLoading(false);
     }
     init();
   }, []);
+
+  const setTurno = async (chiave, valore) => {
+    setTurni(p => { const n={...p}; if(valore) n[chiave]=valore; else delete n[chiave]; return n; });
+    await dbSetTurno(chiave, valore);
+  };
+
+  const setNota = async (settimana, testo) => {
+    setNoteSettimana(p => { const n={...p}; if(testo) n[settimana]=testo; else delete n[settimana]; return n; });
+    await dbSetNota(settimana, testo);
+  };
 
   const showToast = (msg, type="ok") => setToast({msg, type, k: Date.now()});
 
@@ -1140,6 +1393,8 @@ export default function App() {
           employees={employees} records={records} setRecords={setRecords}
           onLogout={()=>setUser(null)}
           onAdd={addEmp} onEdit={editEmp} onDelete={deleteEmp}
+          turni={turni} onSetTurno={setTurno}
+          noteSettimana={noteSettimana} onSetNota={setNota}
         />
       )}
 
@@ -1150,6 +1405,7 @@ export default function App() {
           onRecord={addRecord}
           onLogout={()=>setUser(null)}
           showToast={showToast}
+          turni={turni}
         />
       )}
 
