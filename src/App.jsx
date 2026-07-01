@@ -455,18 +455,19 @@ function RiepilogoPeriodo({ records, employees, filterEmpId, from, to }) {
     .map(([key, d]) => {
       const empMap = {};
       d.recs.forEach(r => { if (!empMap[r.empId]) empMap[r.empId] = []; empMap[r.empId].push(r); });
+      const r30 = t => { const m=t.getMinutes(), h=t.getHours(); if(m<15) return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h,0,0,0); if(m<45) return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h,30,0,0); return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h+1,0,0,0); };
       let dayTotal = 0;
       Object.values(empMap).forEach(recs => {
         let lastIn = null;
         recs.sort((a,b) => a.time - b.time).forEach(r => {
           if (r.type==="in") lastIn = r.time;
-          else if (r.type==="out" && lastIn) { dayTotal += (r.time - lastIn)/3600000; lastIn = null; }
+          else if (r.type==="out" && lastIn) { dayTotal += (r30(r.time) - r30(lastIn))/3600000; lastIn = null; }
         });
       });
-      return { key, date: d.date, recs: d.recs.sort((a,b) => a.time - b.time), dayTotal: Math.round(dayTotal*10)/10 };
+      return { key, date: d.date, recs: d.recs.sort((a,b) => a.time - b.time), dayTotal: Math.max(0, Math.round(dayTotal*2)/2) };
     });
 
-  const grandTotal = Math.round(days.reduce((s,d) => s+d.dayTotal, 0)*10)/10;
+  const grandTotal = Math.round(days.reduce((s,d) => s+d.dayTotal, 0)*2)/2;
   const toggle = key => setExpanded(p => ({...p, [key]: !p[key]}));
 
   if (!from && !to) return (
@@ -584,12 +585,10 @@ function EmployeeScreen({ user, records, onRecord, onLogout, showToast }) {
   const lastIn  = todayRecs.filter(r=>r.type==="in").sort((a,b)=>b.time-a.time)[0];
   const lastOut = todayRecs.filter(r=>r.type==="out").sort((a,b)=>b.time-a.time)[0];
 
-  // Ore arrotondate alla mezzora: entrata arrotondata su, uscita arrotondata giù
   function roundedHours(inTime, outTime) {
     if (!inTime || !outTime) return null;
-    const roundUp   = t => { const m=t.getMinutes(); const r=m===0?0:m<=30?30:60; return new Date(t.getFullYear(),t.getMonth(),t.getDate(),t.getHours()+(r===60?1:0),r===60?0:r,0,0); };
-    const roundDown = t => { const m=t.getMinutes(); const r=m<30?0:30; return new Date(t.getFullYear(),t.getMonth(),t.getDate(),t.getHours(),r,0,0); };
-    const diff = (roundDown(outTime) - roundUp(inTime)) / 3600000;
+    const r30 = t => { const m=t.getMinutes(), h=t.getHours(); if(m<15) return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h,0,0,0); if(m<45) return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h,30,0,0); return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h+1,0,0,0); };
+    const diff = (r30(outTime) - r30(inTime)) / 3600000;
     return Math.max(0, Math.round(diff * 2) / 2);
   }
 
@@ -820,6 +819,7 @@ function AdminDipendenti({ employees, records, onAdd, onEdit, onDelete }) {
   // Raggruppa timbrature per giorno per un dipendente
   function getDailyHours(empId) {
     const recs = records.filter(r => r.empId===empId).sort((a,b)=>a.time-b.time);
+    const r30 = t => { const m=t.getMinutes(), h=t.getHours(); if(m<15) return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h,0,0,0); if(m<45) return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h,30,0,0); return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h+1,0,0,0); };
     const days = {};
     let lastIn = null;
     recs.forEach(r => {
@@ -828,13 +828,12 @@ function AdminDipendenti({ employees, records, onAdd, onEdit, onDelete }) {
       days[day].entries.push(r);
       if (r.type==="in") { lastIn = r.time; if (!days[day].inTime) days[day].inTime = r.time; }
       else if (r.type==="out" && lastIn) {
-        days[day].hours += (r.time - lastIn) / 3600000;
+        days[day].hours += (r30(r.time) - r30(lastIn)) / 3600000;
         days[day].outTime = r.time;
         lastIn = null;
       }
     });
-    // round hours
-    Object.values(days).forEach(d => { d.hours = Math.round(d.hours*10)/10; });
+    Object.values(days).forEach(d => { d.hours = Math.max(0, Math.round(d.hours*2)/2); });
     return Object.entries(days).sort((a,b) => new Date(b[0].split("/").reverse().join("-")) - new Date(a[0].split("/").reverse().join("-")));
   }
 
