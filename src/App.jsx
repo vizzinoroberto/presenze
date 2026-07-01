@@ -929,6 +929,118 @@ function AdminDipendenti({ employees, records, onAdd, onEdit, onDelete }) {
   </>;
 }
 
+/* ── ADMIN PDF ── */
+function AdminPDF({ records, employees }) {
+  const [from, setFrom] = useState(() => { const d=new Date(); d.setDate(1); return d.toISOString().split("T")[0]; });
+  const [to,   setTo  ] = useState(() => new Date().toISOString().split("T")[0]);
+  const [selEmps, setSelEmps] = useState(() => new Set(employees.map(e => e.id)));
+
+  const toggleEmp = id => setSelEmps(prev => { const n=new Set(prev); n.has(id)?n.delete(id):n.add(id); return n; });
+
+  const r30 = t => { const m=t.getMinutes(), h=t.getHours(); if(m<15) return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h,0,0,0); if(m<45) return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h,30,0,0); return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h+1,0,0,0); };
+
+  const generate = () => {
+    if (!from || !to || selEmps.size === 0) return;
+    const fromD = new Date(from); fromD.setHours(0,0,0,0);
+    const toD   = new Date(to);   toD.setHours(23,59,59,999);
+
+    const empData = employees.filter(e => selEmps.has(e.id)).map(emp => {
+      const empRecs = records.filter(r => r.empId===emp.id && r.time>=fromD && r.time<=toD).sort((a,b)=>a.time-b.time);
+      const dayMap = {};
+      let lastIn = null;
+      empRecs.forEach(r => {
+        const day = fmtD(r.time);
+        if (!dayMap[day]) dayMap[day] = { hours: 0 };
+        if (r.type==="in") lastIn = r.time;
+        else if (r.type==="out" && lastIn) { dayMap[day].hours += (r30(r.time)-r30(lastIn))/3600000; lastIn=null; }
+      });
+      const days = Object.entries(dayMap)
+        .sort((a,b) => new Date(a[0].split("/").reverse().join("-")) - new Date(b[0].split("/").reverse().join("-")))
+        .map(([day,d]) => ({day, hours: Math.max(0, Math.round(d.hours*2)/2)}));
+      const total = Math.round(days.reduce((s,d)=>s+d.hours,0)*2)/2;
+      return { emp, days, total };
+    });
+
+    const fromFmt = new Date(from).toLocaleDateString("it-IT",{day:"2-digit",month:"long",year:"numeric"});
+    const toFmt   = new Date(to).toLocaleDateString("it-IT",{day:"2-digit",month:"long",year:"numeric"});
+
+    const html = `<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8"/><title>Report Presenze</title><style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#111;padding:28px 32px}
+h1{font-size:22px;font-weight:800;color:#1d4ed8;margin-bottom:4px}
+.period{font-size:13px;color:#555;margin-bottom:32px}
+.emp-section{margin-bottom:36px;page-break-inside:avoid}
+.emp-name{font-size:15px;font-weight:700;color:#1e40af;padding-bottom:6px;border-bottom:2px solid #2563eb;margin-bottom:4px}
+.emp-meta{font-size:11px;color:#888;margin-bottom:10px}
+table{width:100%;border-collapse:collapse}
+th{background:#f3f4f6;padding:7px 14px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#666;border-bottom:2px solid #e5e7eb}
+td{padding:7px 14px;border-bottom:1px solid #f3f4f6;font-size:12px}
+.h-col{text-align:right;font-weight:600;color:#1d4ed8}
+.tot-row td{font-weight:700;background:#eff6ff;border-top:2px solid #bfdbfe;border-bottom:none;color:#1d4ed8;padding:9px 14px}
+.no-data{color:#aaa;font-style:italic;padding:8px 0;font-size:11px}
+@media print{body{padding:16px}.emp-section{page-break-inside:avoid}}
+</style></head><body>
+<h1>Report Presenze</h1>
+<div class="period">Periodo: <strong>${fromFmt}</strong> — <strong>${toFmt}</strong></div>
+${empData.map(({emp,days,total})=>`
+<div class="emp-section">
+<div class="emp-name">${emp.name}</div>
+<div class="emp-meta">${[emp.role,emp.dept].filter(Boolean).join(" · ")}</div>
+${days.length===0
+  ?'<div class="no-data">Nessuna timbratura nel periodo</div>'
+  :`<table><thead><tr><th>Giorno</th><th style="text-align:right">Ore lavorate</th></tr></thead><tbody>
+${days.map(d=>`<tr><td>${d.day}</td><td class="h-col">${d.hours>0?d.hours+"h":"—"}</td></tr>`).join("")}
+<tr class="tot-row"><td>Totale periodo</td><td class="h-col">${total}h</td></tr>
+</tbody></table>`}
+</div>`).join("")}
+</body></html>`;
+
+    const win = window.open("","_blank");
+    win.document.write(html);
+    win.document.close();
+    setTimeout(()=>win.print(), 250);
+  };
+
+  const canGenerate = from && to && selEmps.size > 0;
+
+  return <>
+    <div style={{fontWeight:800,fontSize:20,color:"#111827",marginBottom:14,letterSpacing:"-.3px"}}>Esporta PDF</div>
+
+    <div className="range-bar" style={{marginBottom:16}}>
+      <span className="range-bar-lbl">Dal</span>
+      <input type="date" className="fi" value={from} onChange={e=>setFrom(e.target.value)} style={{flex:"none",width:136}}/>
+      <span className="range-bar-lbl">Al</span>
+      <input type="date" className="fi" value={to}   onChange={e=>setTo(e.target.value)}   style={{flex:"none",width:136}}/>
+    </div>
+
+    <div style={{background:"#fff",borderRadius:12,boxShadow:"0 1px 3px rgba(0,0,0,.06)",padding:"16px",marginBottom:16}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+        <span style={{fontSize:12,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:".5px"}}>Dipendenti</span>
+        <div style={{display:"flex",gap:8}}>
+          <button className="fi-btn sec" style={{fontSize:11,padding:"5px 10px"}} onClick={()=>setSelEmps(new Set(employees.map(e=>e.id)))}>Tutti</button>
+          <button className="fi-btn sec" style={{fontSize:11,padding:"5px 10px"}} onClick={()=>setSelEmps(new Set())}>Nessuno</button>
+        </div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(210px,1fr))",gap:8}}>
+        {employees.map(e=>(
+          <label key={e.id} onClick={()=>toggleEmp(e.id)} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:selEmps.has(e.id)?"#eff6ff":"#f9fafb",border:`1.5px solid ${selEmps.has(e.id)?"#bfdbfe":"#e5e7eb"}`,borderRadius:9,cursor:"pointer",transition:"all .12s",userSelect:"none"}}>
+            <input type="checkbox" readOnly checked={selEmps.has(e.id)} style={{width:16,height:16,cursor:"pointer",accentColor:"#2563eb",pointerEvents:"none"}}/>
+            <span style={{fontSize:18,flexShrink:0}}>{e.avatar}</span>
+            <div style={{minWidth:0}}>
+              <div style={{fontSize:13,fontWeight:600,color:"#111827",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{e.name}</div>
+              <div style={{fontSize:11,color:"#9ca3af"}}>{e.dept}</div>
+            </div>
+          </label>
+        ))}
+      </div>
+    </div>
+
+    <button onClick={generate} disabled={!canGenerate} style={{width:"100%",padding:"14px",borderRadius:12,border:"none",background:canGenerate?"#2563eb":"#e5e7eb",color:canGenerate?"#fff":"#9ca3af",fontFamily:"Inter,sans-serif",fontSize:15,fontWeight:700,cursor:canGenerate?"pointer":"default",transition:"all .15s"}}>
+      📄 Genera PDF {canGenerate?`(${selEmps.size} dipendent${selEmps.size===1?"e":"i"})`:""}
+    </button>
+  </>;
+}
+
 /* ── ADMIN SHELL ── */
 function AdminShell({ employees, records, setRecords, onLogout, onAdd, onEdit, onDelete }) {
   const [tab, setTab] = useState("dashboard");
@@ -938,7 +1050,7 @@ function AdminShell({ employees, records, setRecords, onLogout, onAdd, onEdit, o
         <div className="topbar-inner">
           <div className="topbar-brand"><div className="topbar-brand-dot"/>Presenze</div>
           <div className="tab-nav">
-            {[["dashboard","Dashboard"],["registro","Registro"],["dipendenti","Dipendenti"]].map(([id,l])=>(
+            {[["dashboard","Dashboard"],["registro","Registro"],["dipendenti","Dipendenti"],["pdf","PDF"]].map(([id,l])=>(
               <button key={id} className={`tab-btn ${tab===id?"active":""}`} onClick={()=>setTab(id)}>{l}</button>
             ))}
           </div>
@@ -952,6 +1064,7 @@ function AdminShell({ employees, records, setRecords, onLogout, onAdd, onEdit, o
         {tab==="dashboard"  && <AdminDashboard records={records} employees={employees}/>}
         {tab==="registro"   && <AdminRegistro  records={records} employees={employees}/>}
         {tab==="dipendenti" && <AdminDipendenti employees={employees} records={records} onAdd={onAdd} onEdit={onEdit} onDelete={onDelete}/>}
+        {tab==="pdf"        && <AdminPDF        records={records} employees={employees}/>}
       </div>
     </div>
   );
