@@ -83,6 +83,14 @@ const fmtT  = d => d.toLocaleTimeString("it-IT",  { hour: "2-digit", minute: "2-
 const fmtD  = d => d.toLocaleDateString("it-IT",  { day: "2-digit", month: "2-digit", year: "numeric" });
 const fmtDshort = d => d.toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" });
 const today0 = () => { const d = new Date(); d.setHours(0,0,0,0); return d; };
+const fmtDateFriendly = d => {
+  const oggi = new Date(); oggi.setHours(0,0,0,0);
+  const ieri = new Date(oggi); ieri.setDate(ieri.getDate()-1);
+  const dd = new Date(d); dd.setHours(0,0,0,0);
+  if (dd.getTime()===oggi.getTime()) return "Oggi";
+  if (dd.getTime()===ieri.getTime()) return "Ieri";
+  return d.toLocaleDateString("it-IT",{weekday:"long",day:"numeric",month:"long"});
+};
 
 function calcHours(recs, empId) {
   const r = recs.filter(x => x.empId === empId).sort((a,b) => a.time - b.time);
@@ -358,6 +366,21 @@ tr:hover td { background: #f9fafb; }
 .emp-reg-name { font-size: 17px; font-weight: 800; color: #fff; }
 .emp-reg-sub { font-size: 12px; color: rgba(255,255,255,.75); margin-top: 2px; }
 
+/* ── RIEPILOGO PERIODO ── */
+.riep-day-card { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.06); margin-bottom: 8px; overflow: hidden; }
+.riep-day-row { display: flex; align-items: center; gap: 12px; padding: 13px 16px; }
+.riep-day-name { font-size: 15px; font-weight: 700; color: #111827; text-transform: capitalize; }
+.riep-day-date { font-size: 12px; color: #9ca3af; margin-top: 2px; }
+.riep-day-hours { font-size: 22px; font-weight: 800; color: #2563eb; letter-spacing: -1px; white-space: nowrap; }
+.riep-det-btn { padding: 5px 12px; border-radius: 7px; border: 1.5px solid #e5e7eb; background: #fff; color: #374151; font-family: 'Inter',sans-serif; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; flex-shrink: 0; transition: all .12s; }
+.riep-det-btn:hover { background: #f3f4f6; }
+.riep-detail { border-top: 1px solid #f3f4f6; padding: 10px 16px; display: flex; flex-direction: column; gap: 6px; }
+.riep-rec { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; background: #f9fafb; }
+.riep-total { background: #eff6ff; border: 1.5px solid #bfdbfe; border-radius: 12px; padding: 14px 20px; display: flex; justify-content: space-between; align-items: center; margin-top: 4px; }
+.riep-total-val { font-size: 26px; font-weight: 800; color: #1d4ed8; letter-spacing: -1px; }
+.range-bar { display: flex; gap: 8px; margin-bottom: 14px; align-items: center; flex-wrap: wrap; padding: 14px 16px; background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+.range-bar-lbl { font-size: 11px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: .5px; white-space: nowrap; }
+
 @media(max-width:540px){
   .stats-row.four { grid-template-columns: 1fr 1fr; }
   .page { padding: 12px; }
@@ -407,6 +430,97 @@ function PinKeypad({ value, onChange, onSubmit, error }) {
     </div>
     <div className="err-msg">{error}</div>
   </>;
+}
+
+/* ── RIEPILOGO PERIODO ── */
+function RiepilogoPeriodo({ records, employees, filterEmpId, from, to }) {
+  const [expanded, setExpanded] = useState({});
+
+  const filtered = records.filter(r => {
+    if (filterEmpId !== null && r.empId !== filterEmpId) return false;
+    if (from) { const f = new Date(from); f.setHours(0,0,0,0); if (r.time < f) return false; }
+    if (to)   { const t = new Date(to);   t.setHours(23,59,59,999); if (r.time > t) return false; }
+    return true;
+  });
+
+  const dayMap = {};
+  filtered.forEach(r => {
+    const key = fmtD(r.time);
+    if (!dayMap[key]) dayMap[key] = { date: r.time, recs: [] };
+    dayMap[key].recs.push(r);
+  });
+
+  const days = Object.entries(dayMap)
+    .sort((a, b) => new Date(b[0].split("/").reverse().join("-")) - new Date(a[0].split("/").reverse().join("-")))
+    .map(([key, d]) => {
+      const empMap = {};
+      d.recs.forEach(r => { if (!empMap[r.empId]) empMap[r.empId] = []; empMap[r.empId].push(r); });
+      let dayTotal = 0;
+      Object.values(empMap).forEach(recs => {
+        let lastIn = null;
+        recs.sort((a,b) => a.time - b.time).forEach(r => {
+          if (r.type==="in") lastIn = r.time;
+          else if (r.type==="out" && lastIn) { dayTotal += (r.time - lastIn)/3600000; lastIn = null; }
+        });
+      });
+      return { key, date: d.date, recs: d.recs.sort((a,b) => a.time - b.time), dayTotal: Math.round(dayTotal*10)/10 };
+    });
+
+  const grandTotal = Math.round(days.reduce((s,d) => s+d.dayTotal, 0)*10)/10;
+  const toggle = key => setExpanded(p => ({...p, [key]: !p[key]}));
+
+  if (!from && !to) return (
+    <div style={{textAlign:"center",padding:"40px 20px",color:"#9ca3af"}}>
+      <div style={{fontSize:36,marginBottom:10}}>📅</div>
+      <div style={{fontWeight:600,fontSize:14}}>Seleziona un intervallo di date per visualizzare il riepilogo</div>
+    </div>
+  );
+
+  if (days.length === 0) return (
+    <div style={{textAlign:"center",padding:"40px 20px",color:"#9ca3af"}}>
+      <div style={{fontSize:36,marginBottom:10}}>📋</div>
+      <div style={{fontWeight:600,fontSize:14}}>Nessuna timbratura nel periodo selezionato</div>
+    </div>
+  );
+
+  return (
+    <div>
+      {days.map(({key, date, recs, dayTotal}) => (
+        <div key={key} className="riep-day-card">
+          <div className="riep-day-row">
+            <div style={{flex:1}}>
+              <div className="riep-day-name">{fmtDateFriendly(date)}</div>
+              <div className="riep-day-date">{key}</div>
+            </div>
+            <div className="riep-day-hours">{dayTotal>0?`${dayTotal}h`:"—"}</div>
+            <button className="riep-det-btn" onClick={()=>toggle(key)}>{expanded[key]?"▲ Chiudi":"▼ Dettaglio"}</button>
+          </div>
+          {expanded[key] && (
+            <div className="riep-detail">
+              {recs.map(r => {
+                const emp = employees?.find(e => e.id===r.empId);
+                return (
+                  <div key={r.id} className="riep-rec">
+                    <div className={`reg-icon ${r.type}`} style={{width:30,height:30,fontSize:14,flexShrink:0}}>{r.type==="in"?"↑":"↓"}</div>
+                    <div style={{flex:1}}>
+                      {filterEmpId===null && emp && <div style={{fontSize:12,fontWeight:600,color:"#374151",marginBottom:1}}>{emp.avatar} {emp.name}</div>}
+                      <div style={{fontSize:13,fontWeight:700,color:r.type==="in"?"#15803d":"#dc2626"}}>{r.type==="in"?"Entrata":"Uscita"}</div>
+                      {r.location && r.location!=="Sede principale" && <div style={{fontSize:11,color:"#9ca3af"}}>📍 {r.location}</div>}
+                    </div>
+                    <div style={{fontWeight:800,fontSize:18,color:"#111827",fontVariantNumeric:"tabular-nums"}}>{fmtT(r.time)}</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ))}
+      <div className="riep-total">
+        <span style={{fontWeight:700,fontSize:14,color:"#1d4ed8"}}>Totale periodo</span>
+        <span className="riep-total-val">{grandTotal}h</span>
+      </div>
+    </div>
+  );
 }
 
 /* ── LOGIN ── */
@@ -462,12 +576,13 @@ function EmployeeScreen({ user, records, onRecord, onLogout, showToast }) {
   const [tab, setTab] = useState("home");
   const [checkedIn, setCheckedIn] = useState(() => isCheckedIn(records, user.id));
   const [now, setNow] = useState(new Date());
+  const [regFrom, setRegFrom] = useState(() => { const d=new Date(); d.setDate(1); return d.toISOString().split("T")[0]; });
+  const [regTo,   setRegTo  ] = useState(() => new Date().toISOString().split("T")[0]);
   useEffect(() => { const i = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(i); }, []);
 
   const todayRecs = records.filter(r => r.empId===user.id && r.time>=today0());
   const lastIn  = todayRecs.filter(r=>r.type==="in").sort((a,b)=>b.time-a.time)[0];
   const lastOut = todayRecs.filter(r=>r.type==="out").sort((a,b)=>b.time-a.time)[0];
-  const myRecs  = records.filter(r => r.empId===user.id).slice(0,120);
 
   // Ore arrotondate alla mezzora: entrata arrotondata su, uscita arrotondata giù
   function roundedHours(inTime, outTime) {
@@ -476,22 +591,6 @@ function EmployeeScreen({ user, records, onRecord, onLogout, showToast }) {
     const roundDown = t => { const m=t.getMinutes(); const r=m<30?0:30; return new Date(t.getFullYear(),t.getMonth(),t.getDate(),t.getHours(),r,0,0); };
     const diff = (roundDown(outTime) - roundUp(inTime)) / 3600000;
     return Math.max(0, Math.round(diff * 2) / 2);
-  }
-
-  // Raggruppa myRecs per giorno con ore arrotondate
-  function groupByDay(recs) {
-    const days = {};
-    recs.forEach(r => {
-      const key = fmtD(r.time);
-      if (!days[key]) days[key] = { date: r.time, entries: [] };
-      days[key].entries.push(r);
-    });
-    return Object.entries(days).map(([day, d]) => {
-      const ins  = d.entries.filter(r=>r.type==="in").sort((a,b)=>a.time-b.time);
-      const outs = d.entries.filter(r=>r.type==="out").sort((a,b)=>a.time-b.time);
-      const h = roundedHours(ins[0]?.time, outs[outs.length-1]?.time);
-      return { day, date: d.date, entries: d.entries.sort((a,b)=>b.time-a.time), hours: h };
-    });
   }
 
   const handle = () => {
@@ -506,17 +605,6 @@ function EmployeeScreen({ user, records, onRecord, onLogout, showToast }) {
       );
     } else commit(rec);
   };
-
-  const fmtDateFriendly = d => {
-    const oggi = new Date(); oggi.setHours(0,0,0,0);
-    const ieri = new Date(oggi); ieri.setDate(ieri.getDate()-1);
-    const dd = new Date(d); dd.setHours(0,0,0,0);
-    if (dd.getTime()===oggi.getTime()) return "Oggi";
-    if (dd.getTime()===ieri.getTime()) return "Ieri";
-    return d.toLocaleDateString("it-IT",{weekday:"long",day:"numeric",month:"long"});
-  };
-
-  const dayGroups = groupByDay(myRecs);
 
   return (
     <div className="tmb-outer">
@@ -584,30 +672,13 @@ function EmployeeScreen({ user, records, onRecord, onLogout, showToast }) {
 
       {tab === "registro" && (
         <div className="reg-outer">
-          {dayGroups.length===0 && (
-            <div style={{textAlign:"center",padding:"60px 20px",color:"#9ca3af"}}>
-              <div style={{fontSize:40,marginBottom:12}}>📋</div>
-              <div style={{fontWeight:600,fontSize:15}}>Nessuna timbratura ancora</div>
-            </div>
-          )}
-          {dayGroups.map(({day, date, entries, hours})=>(
-            <div key={day} className="reg-day-group">
-              <div className="reg-day-label" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <span>{fmtDateFriendly(date)}</span>
-                {hours!==null && <span style={{color:"#2563eb",fontWeight:700,fontSize:13}}>{hours}h lavorate</span>}
-              </div>
-              {entries.map(r=>(
-                <div key={r.id} className="reg-row">
-                  <div className={`reg-icon ${r.type}`}>{r.type==="in"?"↑":"↓"}</div>
-                  <div style={{flex:1}}>
-                    <div className="reg-type">{r.type==="in"?"Entrata":"Uscita"}</div>
-                    <div className="reg-loc">{r.location==="Sede principale"?"📍 Sede":r.location?"📍 "+r.location:""}</div>
-                  </div>
-                  <div className="reg-time-big">{fmtT(r.time)}</div>
-                </div>
-              ))}
-            </div>
-          ))}
+          <div className="range-bar">
+            <span className="range-bar-lbl">Dal</span>
+            <input type="date" className="fi" value={regFrom} onChange={e=>setRegFrom(e.target.value)} style={{flex:"none",width:136}}/>
+            <span className="range-bar-lbl">Al</span>
+            <input type="date" className="fi" value={regTo}   onChange={e=>setRegTo(e.target.value)}   style={{flex:"none",width:136}}/>
+          </div>
+          <RiepilogoPeriodo records={records} employees={[]} filterEmpId={user.id} from={regFrom} to={regTo}/>
         </div>
       )}
     </div>
@@ -723,7 +794,11 @@ function AdminRegistro({ records, setRecords, employees }) {
   const [cEmp, setCEmp]   = useState("all");
   const [cFrom,setCFrom]  = useState("");
   const [cTo,  setCTo]    = useState("");
-  const [delConfirm, setDelConfirm] = useState(null); // record to delete
+  const [delConfirm, setDelConfirm] = useState(null);
+  const [viewMode, setViewMode] = useState("lista");
+  const [rEmp,  setREmp]  = useState("all");
+  const [rFrom, setRFrom] = useState("");
+  const [rTo,   setRTo]   = useState("");
 
   const filtered = records.filter(r=>{
     if(empF!=="all"&&r.empId!==Number(empF)) return false;
@@ -740,76 +815,98 @@ function AdminRegistro({ records, setRecords, employees }) {
   };
 
   return <>
-    <div style={{fontWeight:800,fontSize:20,color:"#111827",marginBottom:14,letterSpacing:"-.3px"}}>Registro Timbrature</div>
-
-    <div className="csv-box">
-      <div className="csv-title">⬇ Esporta CSV</div>
-      <div className="filters" style={{marginBottom:0}}>
-        <select className="fi" value={cEmp} onChange={e=>setCEmp(e.target.value)}>
-          <option value="all">Tutti i dipendenti</option>
-          {employees.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}
-        </select>
-        <input type="date" className="fi" value={cFrom} onChange={e=>setCFrom(e.target.value)} style={{flex:"none",width:136}}/>
-        <input type="date" className="fi" value={cTo}   onChange={e=>setCTo(e.target.value)}   style={{flex:"none",width:136}}/>
-        <button className="fi-btn" onClick={()=>exportCSV(records,employees,cEmp,cFrom,cTo)}>⬇ Scarica CSV</button>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:10}}>
+      <div style={{fontWeight:800,fontSize:20,color:"#111827",letterSpacing:"-.3px"}}>Registro Timbrature</div>
+      <div className="tab-nav">
+        <button className={`tab-btn ${viewMode==="lista"?"active":""}`} onClick={()=>setViewMode("lista")}>📋 Lista</button>
+        <button className={`tab-btn ${viewMode==="riepilogo"?"active":""}`} onClick={()=>setViewMode("riepilogo")}>📊 Riepilogo</button>
       </div>
     </div>
 
-    <div className="filters">
-      <select className="fi" value={empF}  onChange={e=>setEmpF(e.target.value)}>
-        <option value="all">Tutti</option>
-        {employees.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}
-      </select>
-      <input type="date" className="fi" value={fromF} onChange={e=>setFromF(e.target.value)} style={{flex:"none",width:136}}/>
-      <input type="date" className="fi" value={toF}   onChange={e=>setToF(e.target.value)}   style={{flex:"none",width:136}}/>
-      <select className="fi" value={typeF} onChange={e=>setTypeF(e.target.value)}>
-        <option value="all">Tutti</option>
-        <option value="in">Entrate</option>
-        <option value="out">Uscite</option>
-      </select>
-      <button className="fi-btn sec" onClick={()=>{setEmpF("all");setFromF("");setToF("");setTypeF("all");}}>Reset</button>
-      <span className="fi-cnt">{filtered.length} record</span>
-    </div>
+    {viewMode==="riepilogo" && <>
+      <div className="range-bar">
+        <select className="fi" value={rEmp} onChange={e=>setREmp(e.target.value)}>
+          <option value="all">Tutti i dipendenti</option>
+          {employees.map(e=><option key={e.id} value={e.id}>{e.avatar} {e.name}</option>)}
+        </select>
+        <span className="range-bar-lbl">Dal</span>
+        <input type="date" className="fi" value={rFrom} onChange={e=>setRFrom(e.target.value)} style={{flex:"none",width:136}}/>
+        <span className="range-bar-lbl">Al</span>
+        <input type="date" className="fi" value={rTo}   onChange={e=>setRTo(e.target.value)}   style={{flex:"none",width:136}}/>
+      </div>
+      <RiepilogoPeriodo records={records} employees={employees} filterEmpId={rEmp==="all"?null:Number(rEmp)} from={rFrom} to={rTo}/>
+    </>}
 
-    <div className="table-wrap">
-      <table>
-        <thead><tr><th>Data</th><th>Ora</th><th>Dipendente</th><th>Reparto</th><th>Tipo</th><th>Sede</th><th></th></tr></thead>
-        <tbody>
-          {filtered.length===0 && <tr><td colSpan={7} style={{textAlign:"center",color:"#9ca3af",padding:"20px"}}>Nessun record trovato</td></tr>}
-          {filtered.map(r=>{
-            const e=employees.find(x=>x.id===r.empId);
-            return <tr key={r.id}>
-              <td className="td-date">{fmtD(r.time)}</td>
-              <td className="td-time">{fmtT(r.time)}</td>
-              <td className="td-name">{e?.avatar} {e?.name}</td>
-              <td style={{color:"#9ca3af",fontSize:12}}>{e?.dept}</td>
-              <td><span className={`badge ${r.type}`}><span className="bd"/>{r.type==="in"?"Entrata":"Uscita"}</span></td>
-              <td style={{color:"#9ca3af",fontSize:12}}>{r.location}</td>
-              <td><button className="td-btn" onClick={()=>setDelConfirm(r)}>Elimina</button></td>
-            </tr>;
-          })}
-        </tbody>
-      </table>
-    </div>
-
-    {delConfirm && (
-      <div className="modal-ov" onClick={e=>e.target===e.currentTarget&&setDelConfirm(null)}>
-        <div className="modal-box" style={{maxWidth:320,textAlign:"center"}}>
-          <div style={{fontSize:36,marginBottom:10}}>🗑️</div>
-          <div className="modal-title" style={{justifyContent:"center"}}>Elimina record?</div>
-          <p style={{fontSize:13,color:"#6b7280",marginBottom:6}}>
-            {employees.find(e=>e.id===delConfirm.empId)?.name}
-          </p>
-          <p style={{fontSize:14,fontWeight:600,color:"#374151",marginBottom:18}}>
-            {r => r}{delConfirm.type==="in"?"Entrata":"Uscita"} — {fmtD(delConfirm.time)} {fmtT(delConfirm.time)}
-          </p>
-          <div className="modal-btns">
-            <button className="m-btn cx" onClick={()=>setDelConfirm(null)}>Annulla</button>
-            <button className="m-btn red" onClick={()=>deleteRecord(delConfirm.id)}>Elimina</button>
-          </div>
+    {viewMode==="lista" && <>
+      <div className="csv-box">
+        <div className="csv-title">⬇ Esporta CSV</div>
+        <div className="filters" style={{marginBottom:0}}>
+          <select className="fi" value={cEmp} onChange={e=>setCEmp(e.target.value)}>
+            <option value="all">Tutti i dipendenti</option>
+            {employees.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}
+          </select>
+          <input type="date" className="fi" value={cFrom} onChange={e=>setCFrom(e.target.value)} style={{flex:"none",width:136}}/>
+          <input type="date" className="fi" value={cTo}   onChange={e=>setCTo(e.target.value)}   style={{flex:"none",width:136}}/>
+          <button className="fi-btn" onClick={()=>exportCSV(records,employees,cEmp,cFrom,cTo)}>⬇ Scarica CSV</button>
         </div>
       </div>
-    )}
+
+      <div className="filters">
+        <select className="fi" value={empF}  onChange={e=>setEmpF(e.target.value)}>
+          <option value="all">Tutti</option>
+          {employees.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}
+        </select>
+        <input type="date" className="fi" value={fromF} onChange={e=>setFromF(e.target.value)} style={{flex:"none",width:136}}/>
+        <input type="date" className="fi" value={toF}   onChange={e=>setToF(e.target.value)}   style={{flex:"none",width:136}}/>
+        <select className="fi" value={typeF} onChange={e=>setTypeF(e.target.value)}>
+          <option value="all">Tutti</option>
+          <option value="in">Entrate</option>
+          <option value="out">Uscite</option>
+        </select>
+        <button className="fi-btn sec" onClick={()=>{setEmpF("all");setFromF("");setToF("");setTypeF("all");}}>Reset</button>
+        <span className="fi-cnt">{filtered.length} record</span>
+      </div>
+
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>Data</th><th>Ora</th><th>Dipendente</th><th>Reparto</th><th>Tipo</th><th>Sede</th><th></th></tr></thead>
+          <tbody>
+            {filtered.length===0 && <tr><td colSpan={7} style={{textAlign:"center",color:"#9ca3af",padding:"20px"}}>Nessun record trovato</td></tr>}
+            {filtered.map(r=>{
+              const e=employees.find(x=>x.id===r.empId);
+              return <tr key={r.id}>
+                <td className="td-date">{fmtD(r.time)}</td>
+                <td className="td-time">{fmtT(r.time)}</td>
+                <td className="td-name">{e?.avatar} {e?.name}</td>
+                <td style={{color:"#9ca3af",fontSize:12}}>{e?.dept}</td>
+                <td><span className={`badge ${r.type}`}><span className="bd"/>{r.type==="in"?"Entrata":"Uscita"}</span></td>
+                <td style={{color:"#9ca3af",fontSize:12}}>{r.location}</td>
+                <td><button className="td-btn" onClick={()=>setDelConfirm(r)}>Elimina</button></td>
+              </tr>;
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {delConfirm && (
+        <div className="modal-ov" onClick={e=>e.target===e.currentTarget&&setDelConfirm(null)}>
+          <div className="modal-box" style={{maxWidth:320,textAlign:"center"}}>
+            <div style={{fontSize:36,marginBottom:10}}>🗑️</div>
+            <div className="modal-title" style={{justifyContent:"center"}}>Elimina record?</div>
+            <p style={{fontSize:13,color:"#6b7280",marginBottom:6}}>
+              {employees.find(e=>e.id===delConfirm.empId)?.name}
+            </p>
+            <p style={{fontSize:14,fontWeight:600,color:"#374151",marginBottom:18}}>
+              {delConfirm.type==="in"?"Entrata":"Uscita"} — {fmtD(delConfirm.time)} {fmtT(delConfirm.time)}
+            </p>
+            <div className="modal-btns">
+              <button className="m-btn cx" onClick={()=>setDelConfirm(null)}>Annulla</button>
+              <button className="m-btn red" onClick={()=>deleteRecord(delConfirm.id)}>Elimina</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>}
   </>;
 }
 
