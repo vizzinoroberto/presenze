@@ -176,10 +176,11 @@ html, body { height: 100%; background: #f0f2f5; font-family: 'Inter', sans-serif
 /* ── TOPBAR ── */
 .topbar { background: #fff; border-bottom: 1px solid #e5e7eb; padding: 12px 16px; position: sticky; top: 0; z-index: 50; }
 .topbar-inner { max-width: 720px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
-.topbar-brand { font-size: 16px; font-weight: 800; color: #111827; letter-spacing: -.3px; display: flex; align-items: center; gap: 8px; }
+.topbar-brand { font-size: 16px; font-weight: 800; color: #111827; letter-spacing: -.3px; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .topbar-brand-dot { width: 8px; height: 8px; border-radius: 50%; background: #2563eb; }
-.tab-nav { display: flex; background: #f3f4f6; border-radius: 8px; padding: 2px; gap: 1px; }
-.tab-btn { padding: 6px 12px; border: none; border-radius: 6px; font-family: 'Inter',sans-serif; font-size: 13px; font-weight: 600; cursor: pointer; transition: all .12s; background: transparent; color: #6b7280; white-space: nowrap; }
+.tab-nav { display: flex; background: #f3f4f6; border-radius: 8px; padding: 2px; gap: 1px; overflow-x: auto; max-width: 100%; }
+.tab-nav::-webkit-scrollbar { display: none; }
+.tab-btn { padding: 6px 10px; border: none; border-radius: 6px; font-family: 'Inter',sans-serif; font-size: 12px; font-weight: 600; cursor: pointer; transition: all .12s; background: transparent; color: #6b7280; white-space: nowrap; flex-shrink: 0; }
 .tab-btn:hover { color: #374151; }
 .tab-btn.active { background: #fff; color: #111827; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
 .topbar-right { display: flex; align-items: center; gap: 8px; }
