@@ -1024,8 +1024,8 @@ ${days.map(d=>`<tr><td>${d.day}</td><td class="h-col">${d.hours>0?d.hours+"h":"â
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(210px,1fr))",gap:8}}>
         {employees.map(e=>(
-          <label key={e.id} onClick={()=>toggleEmp(e.id)} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:selEmps.has(e.id)?"#eff6ff":"#f9fafb",border:`1.5px solid ${selEmps.has(e.id)?"#bfdbfe":"#e5e7eb"}`,borderRadius:9,cursor:"pointer",transition:"all .12s",userSelect:"none"}}>
-            <input type="checkbox" readOnly checked={selEmps.has(e.id)} style={{width:16,height:16,cursor:"pointer",accentColor:"#2563eb",pointerEvents:"none"}}/>
+          <label key={e.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:selEmps.has(e.id)?"#eff6ff":"#f9fafb",border:`1.5px solid ${selEmps.has(e.id)?"#bfdbfe":"#e5e7eb"}`,borderRadius:9,cursor:"pointer",transition:"all .12s",userSelect:"none"}}>
+            <input type="checkbox" checked={selEmps.has(e.id)} onChange={()=>toggleEmp(e.id)} style={{width:16,height:16,cursor:"pointer",accentColor:"#2563eb"}}/>
             <span style={{fontSize:18,flexShrink:0}}>{e.avatar}</span>
             <div style={{minWidth:0}}>
               <div style={{fontSize:13,fontWeight:600,color:"#111827",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{e.name}</div>
