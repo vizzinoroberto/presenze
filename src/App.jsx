@@ -688,7 +688,6 @@ function EmployeeScreen({ user, records, onRecord, onLogout, showToast }) {
 /* ── ADMIN DASHBOARD ── */
 function AdminDashboard({ records, employees }) {
   const presenti  = employees.filter(e=>isCheckedIn(records,e.id));
-  const assenti   = employees.filter(e=>!isCheckedIn(records,e.id));
   const todayRecs = records.filter(r=>r.time>=today0());
   const inR       = todayRecs.filter(r=>r.type==="in");
   const avgMs     = inR.length ? inR.reduce((s,r)=>s+r.time.getTime(),0)/inR.length : null;
@@ -696,16 +695,11 @@ function AdminDashboard({ records, employees }) {
   return <>
     <div style={{fontWeight:800,fontSize:20,color:"#111827",marginBottom:14,letterSpacing:"-.3px"}}>Dashboard Presenze</div>
 
-    <div className="stats-row four">
+    <div className="stats-row">
       <div className="stat-c blue">
         <div className="stat-lbl">Presenti ora</div>
         <div className="stat-val blue">{presenti.length}</div>
         <div className="stat-sub">su {employees.length} dip.</div>
-      </div>
-      <div className="stat-c">
-        <div className="stat-lbl">Assenti</div>
-        <div className="stat-val red">{assenti.length}</div>
-        <div className="stat-sub">oggi</div>
       </div>
       <div className="stat-c">
         <div className="stat-lbl">Timbrature</div>
@@ -719,50 +713,21 @@ function AdminDashboard({ records, employees }) {
       </div>
     </div>
 
-    <div className="pres-bar-wrap">
-      <div className="pres-bar-row">
-        <span style={{fontSize:13,fontWeight:600,color:"#374151"}}>{presenti.length} di {employees.length} presenti</span>
-        <span style={{fontSize:18,fontWeight:800,color:"#2563eb"}}>{Math.round(presenti.length/Math.max(employees.length,1)*100)}%</span>
-      </div>
-      <div className="pres-bar-bg">
-        <div className="pres-bar-fill" style={{width:`${presenti.length/Math.max(employees.length,1)*100}%`}}/>
-      </div>
-    </div>
-
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-      <div>
-        <div className="sec-t">In sede ora</div>
-        <div className="people-grid">
-          {presenti.length===0 && <div style={{fontSize:13,color:"#9ca3af",padding:"8px 0"}}>Nessuno in sede</div>}
-          {presenti.map(e=>{
-            const li=records.filter(r=>r.empId===e.id&&r.type==="in"&&r.time>=today0()).sort((a,b)=>b.time-a.time)[0];
-            const mins=li?Math.floor((new Date()-li.time)/60000):0;
-            return <div key={e.id} className="person-row">
-              <div className="person-av">{e.avatar}</div>
-              <div style={{flex:1}}>
-                <div className="person-name">{e.name}</div>
-                <div className="person-sub">{li?`da ${fmtT(li.time)}`:""} · {Math.floor(mins/60)}h{mins%60}m</div>
-              </div>
-              <span className="badge in"><span className="bd"/>In sede</span>
-            </div>;
-          })}
-        </div>
-      </div>
-      <div>
-        <div className="sec-t">Assenti oggi</div>
-        <div className="people-grid">
-          {assenti.map(e=>(
-            <div key={e.id} className="person-row">
-              <div className="person-av" style={{opacity:.4}}>{e.avatar}</div>
-              <div style={{flex:1}}>
-                <div className="person-name">{e.name}</div>
-                <div className="person-sub">{e.dept}</div>
-              </div>
-              <span className="badge out"><span className="bd"/>Assente</span>
-            </div>
-          ))}
-        </div>
-      </div>
+    <div className="sec-t">In sede ora</div>
+    <div className="people-grid" style={{marginBottom:16}}>
+      {presenti.length===0 && <div style={{fontSize:13,color:"#9ca3af",padding:"8px 0"}}>Nessuno in sede</div>}
+      {presenti.map(e=>{
+        const li=records.filter(r=>r.empId===e.id&&r.type==="in"&&r.time>=today0()).sort((a,b)=>b.time-a.time)[0];
+        const mins=li?Math.floor((new Date()-li.time)/60000):0;
+        return <div key={e.id} className="person-row">
+          <div className="person-av">{e.avatar}</div>
+          <div style={{flex:1}}>
+            <div className="person-name">{e.name}</div>
+            <div className="person-sub">{li?`da ${fmtT(li.time)}`:""} · {Math.floor(mins/60)}h{mins%60}m</div>
+          </div>
+          <span className="badge in"><span className="bd"/>In sede</span>
+        </div>;
+      })}
     </div>
 
     <div className="sec-t">Ultime timbrature</div>
@@ -786,127 +751,24 @@ function AdminDashboard({ records, employees }) {
 }
 
 /* ── ADMIN REGISTRO ── */
-function AdminRegistro({ records, setRecords, employees }) {
-  const [empF, setEmpF]   = useState("all");
-  const [fromF,setFromF]  = useState("");
-  const [toF,  setToF]    = useState("");
-  const [typeF,setTypeF]  = useState("all");
-  const [cEmp, setCEmp]   = useState("all");
-  const [cFrom,setCFrom]  = useState("");
-  const [cTo,  setCTo]    = useState("");
-  const [delConfirm, setDelConfirm] = useState(null);
-  const [viewMode, setViewMode] = useState("lista");
-  const [rEmp,  setREmp]  = useState("all");
-  const [rFrom, setRFrom] = useState("");
-  const [rTo,   setRTo]   = useState("");
-
-  const filtered = records.filter(r=>{
-    if(empF!=="all"&&r.empId!==Number(empF)) return false;
-    if(fromF){const f=new Date(fromF);f.setHours(0,0,0,0);if(r.time<f)return false;}
-    if(toF){const t=new Date(toF);t.setHours(23,59,59,999);if(r.time>t)return false;}
-    if(typeF!=="all"&&r.type!==typeF) return false;
-    return true;
-  }).slice(0,300);
-
-  const deleteRecord = async id => {
-    setRecords(prev => prev.filter(r => r.id !== id));
-    setDelConfirm(null);
-    await dbDeleteRecord(id);
-  };
+function AdminRegistro({ records, employees }) {
+  const [empF,  setEmpF]  = useState("all");
+  const [rFrom, setRFrom] = useState(() => { const d=new Date(); d.setDate(1); return d.toISOString().split("T")[0]; });
+  const [rTo,   setRTo]   = useState(() => new Date().toISOString().split("T")[0]);
 
   return <>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:10}}>
-      <div style={{fontWeight:800,fontSize:20,color:"#111827",letterSpacing:"-.3px"}}>Registro Timbrature</div>
-      <div className="tab-nav">
-        <button className={`tab-btn ${viewMode==="lista"?"active":""}`} onClick={()=>setViewMode("lista")}>📋 Lista</button>
-        <button className={`tab-btn ${viewMode==="riepilogo"?"active":""}`} onClick={()=>setViewMode("riepilogo")}>📊 Riepilogo</button>
-      </div>
+    <div style={{fontWeight:800,fontSize:20,color:"#111827",marginBottom:14,letterSpacing:"-.3px"}}>Registro Timbrature</div>
+    <div className="range-bar">
+      <select className="fi" value={empF} onChange={e=>setEmpF(e.target.value)}>
+        <option value="all">Tutti i dipendenti</option>
+        {employees.map(e=><option key={e.id} value={e.id}>{e.avatar} {e.name}</option>)}
+      </select>
+      <span className="range-bar-lbl">Dal</span>
+      <input type="date" className="fi" value={rFrom} onChange={e=>setRFrom(e.target.value)} style={{flex:"none",width:136}}/>
+      <span className="range-bar-lbl">Al</span>
+      <input type="date" className="fi" value={rTo}   onChange={e=>setRTo(e.target.value)}   style={{flex:"none",width:136}}/>
     </div>
-
-    {viewMode==="riepilogo" && <>
-      <div className="range-bar">
-        <select className="fi" value={rEmp} onChange={e=>setREmp(e.target.value)}>
-          <option value="all">Tutti i dipendenti</option>
-          {employees.map(e=><option key={e.id} value={e.id}>{e.avatar} {e.name}</option>)}
-        </select>
-        <span className="range-bar-lbl">Dal</span>
-        <input type="date" className="fi" value={rFrom} onChange={e=>setRFrom(e.target.value)} style={{flex:"none",width:136}}/>
-        <span className="range-bar-lbl">Al</span>
-        <input type="date" className="fi" value={rTo}   onChange={e=>setRTo(e.target.value)}   style={{flex:"none",width:136}}/>
-      </div>
-      <RiepilogoPeriodo records={records} employees={employees} filterEmpId={rEmp==="all"?null:Number(rEmp)} from={rFrom} to={rTo}/>
-    </>}
-
-    {viewMode==="lista" && <>
-      <div className="csv-box">
-        <div className="csv-title">⬇ Esporta CSV</div>
-        <div className="filters" style={{marginBottom:0}}>
-          <select className="fi" value={cEmp} onChange={e=>setCEmp(e.target.value)}>
-            <option value="all">Tutti i dipendenti</option>
-            {employees.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}
-          </select>
-          <input type="date" className="fi" value={cFrom} onChange={e=>setCFrom(e.target.value)} style={{flex:"none",width:136}}/>
-          <input type="date" className="fi" value={cTo}   onChange={e=>setCTo(e.target.value)}   style={{flex:"none",width:136}}/>
-          <button className="fi-btn" onClick={()=>exportCSV(records,employees,cEmp,cFrom,cTo)}>⬇ Scarica CSV</button>
-        </div>
-      </div>
-
-      <div className="filters">
-        <select className="fi" value={empF}  onChange={e=>setEmpF(e.target.value)}>
-          <option value="all">Tutti</option>
-          {employees.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}
-        </select>
-        <input type="date" className="fi" value={fromF} onChange={e=>setFromF(e.target.value)} style={{flex:"none",width:136}}/>
-        <input type="date" className="fi" value={toF}   onChange={e=>setToF(e.target.value)}   style={{flex:"none",width:136}}/>
-        <select className="fi" value={typeF} onChange={e=>setTypeF(e.target.value)}>
-          <option value="all">Tutti</option>
-          <option value="in">Entrate</option>
-          <option value="out">Uscite</option>
-        </select>
-        <button className="fi-btn sec" onClick={()=>{setEmpF("all");setFromF("");setToF("");setTypeF("all");}}>Reset</button>
-        <span className="fi-cnt">{filtered.length} record</span>
-      </div>
-
-      <div className="table-wrap">
-        <table>
-          <thead><tr><th>Data</th><th>Ora</th><th>Dipendente</th><th>Reparto</th><th>Tipo</th><th>Sede</th><th></th></tr></thead>
-          <tbody>
-            {filtered.length===0 && <tr><td colSpan={7} style={{textAlign:"center",color:"#9ca3af",padding:"20px"}}>Nessun record trovato</td></tr>}
-            {filtered.map(r=>{
-              const e=employees.find(x=>x.id===r.empId);
-              return <tr key={r.id}>
-                <td className="td-date">{fmtD(r.time)}</td>
-                <td className="td-time">{fmtT(r.time)}</td>
-                <td className="td-name">{e?.avatar} {e?.name}</td>
-                <td style={{color:"#9ca3af",fontSize:12}}>{e?.dept}</td>
-                <td><span className={`badge ${r.type}`}><span className="bd"/>{r.type==="in"?"Entrata":"Uscita"}</span></td>
-                <td style={{color:"#9ca3af",fontSize:12}}>{r.location}</td>
-                <td><button className="td-btn" onClick={()=>setDelConfirm(r)}>Elimina</button></td>
-              </tr>;
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      {delConfirm && (
-        <div className="modal-ov" onClick={e=>e.target===e.currentTarget&&setDelConfirm(null)}>
-          <div className="modal-box" style={{maxWidth:320,textAlign:"center"}}>
-            <div style={{fontSize:36,marginBottom:10}}>🗑️</div>
-            <div className="modal-title" style={{justifyContent:"center"}}>Elimina record?</div>
-            <p style={{fontSize:13,color:"#6b7280",marginBottom:6}}>
-              {employees.find(e=>e.id===delConfirm.empId)?.name}
-            </p>
-            <p style={{fontSize:14,fontWeight:600,color:"#374151",marginBottom:18}}>
-              {delConfirm.type==="in"?"Entrata":"Uscita"} — {fmtD(delConfirm.time)} {fmtT(delConfirm.time)}
-            </p>
-            <div className="modal-btns">
-              <button className="m-btn cx" onClick={()=>setDelConfirm(null)}>Annulla</button>
-              <button className="m-btn red" onClick={()=>deleteRecord(delConfirm.id)}>Elimina</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </>}
+    <RiepilogoPeriodo records={records} employees={employees} filterEmpId={empF==="all"?null:Number(empF)} from={rFrom} to={rTo}/>
   </>;
 }
 
@@ -1089,7 +951,7 @@ function AdminShell({ employees, records, setRecords, onLogout, onAdd, onEdit, o
       </div>
       <div className="page" style={{paddingTop:20}}>
         {tab==="dashboard"  && <AdminDashboard records={records} employees={employees}/>}
-        {tab==="registro"   && <AdminRegistro  records={records} setRecords={setRecords} employees={employees}/>}
+        {tab==="registro"   && <AdminRegistro  records={records} employees={employees}/>}
         {tab==="dipendenti" && <AdminDipendenti employees={employees} records={records} onAdd={onAdd} onEdit={onEdit} onDelete={onDelete}/>}
       </div>
     </div>
