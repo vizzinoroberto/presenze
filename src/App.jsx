@@ -41,28 +41,20 @@ async function dbDeleteRecord(id) {
   return sbFetch(`timbrature?id=eq.${id}`, { method:"DELETE" });
 }
 
-// ── Turni
-async function dbLoadTurni() {
-  const data = await sbFetch("turni?select=*");
-  if (!data) return {};
-  const map = {};
-  data.forEach(r => { map[r.chiave] = r.valore; });
-  return map;
-}
-async function dbSetTurno(chiave, valore) {
-  if (!valore) return sbFetch(`turni?chiave=eq.${encodeURIComponent(chiave)}`, { method:"DELETE" });
-  return sbFetch("turni", { method:"POST", headers:{"Prefer":"resolution=merge-duplicates,return=minimal"}, body: JSON.stringify({ chiave, valore }) });
-}
-async function dbLoadNoteSettimana() {
-  const data = await sbFetch("note_settimana?select=*");
-  if (!data) return {};
-  const map = {};
-  data.forEach(r => { map[r.settimana] = r.testo; });
-  return map;
-}
-async function dbSetNota(settimana, testo) {
-  if (!testo) return sbFetch(`note_settimana?settimana=eq.${settimana}`, { method:"DELETE" });
-  return sbFetch("note_settimana", { method:"POST", headers:{"Prefer":"resolution=merge-duplicates,return=minimal"}, body: JSON.stringify({ settimana, testo }) });
+// ── Turni Arcobaleno (sola lettura dall'app esterna)
+const TURNI_URL = "https://rvzikapecolurexiaoqs.supabase.co";
+const TURNI_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ2emlrYXBlY29sdXJleGlhb3FzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwMzY1MTUsImV4cCI6MjA5MDYxMjUxNX0.BmWfgJ7ycRA3O5zSC4q2bba6VBtxOUjUSO7e1xHxpf4";
+const TH = { "apikey": TURNI_KEY, "Authorization": "Bearer " + TURNI_KEY };
+
+async function dbLoadTurniEsterni() {
+  try {
+    const res = await fetch(TURNI_URL + "/rest/v1/turni?select=chiave,valore", { headers: TH });
+    if (!res.ok) return {};
+    const data = await res.json();
+    const map = {};
+    data.forEach(r => { map[r.chiave] = r.valore; });
+    return map;
+  } catch { return {}; }
 }
 
 /* ─── TURNI CONSTANTS ──────────────────────────────────────────────────── */
@@ -1138,24 +1130,27 @@ ${days.map(d=>`<tr><td>${d.day}</td><td class="h-col">${d.hours>0?d.hours+"h":"�
   </>;
 }
 
-/* ── TURNI ADMIN ── */
-function TurniAdmin({ employees, turni, onSetTurno, noteSettimana, onSetNota }) {
+/* ── TURNI ADMIN (sola lettura — gestione su Turni Arcobaleno) ── */
+function TurniAdmin({ employees, turni }) {
   const [weekStart, setWeekStart] = useState(() => getMonday(new Date()));
-  const [noteLocal, setNoteLocal] = useState(null);
 
   const turniEmps = employees.filter(e => e.in_turni);
   const days = Array.from({length:7}, (_,i) => { const d=new Date(weekStart); d.setDate(weekStart.getDate()+i); return d; });
-  const weekKey = toDateStr(weekStart);
-  const nota = noteLocal !== null ? noteLocal : (noteSettimana[weekKey] || "");
 
-  const prevWeek = () => { const d=new Date(weekStart); d.setDate(d.getDate()-7); setWeekStart(d); setNoteLocal(null); };
-  const nextWeek = () => { const d=new Date(weekStart); d.setDate(d.getDate()+7); setWeekStart(d); setNoteLocal(null); };
+  const prevWeek = () => { const d=new Date(weekStart); d.setDate(d.getDate()-7); setWeekStart(d); };
+  const nextWeek = () => { const d=new Date(weekStart); d.setDate(d.getDate()+7); setWeekStart(d); };
 
   const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate()+6);
   const weekLabel = `${weekStart.toLocaleDateString("it-IT",{day:"2-digit",month:"long"})} – ${weekEnd.toLocaleDateString("it-IT",{day:"2-digit",month:"long",year:"numeric"})}`;
 
   return <>
-    <div style={{fontWeight:800,fontSize:20,color:"#111827",marginBottom:14,letterSpacing:"-.3px"}}>Turni</div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
+      <div style={{fontWeight:800,fontSize:20,color:"#111827",letterSpacing:"-.3px"}}>Turni</div>
+      <a href="https://turni-arcobaleno.vercel.app" target="_blank" rel="noreferrer"
+        style={{fontSize:12,fontWeight:600,color:"#2563eb",textDecoration:"none",padding:"6px 12px",border:"1.5px solid #bfdbfe",borderRadius:8,background:"#eff6ff"}}>
+        ✏️ Modifica su Turni Arcobaleno →
+      </a>
+    </div>
     <div className="week-nav">
       <button className="week-nav-btn" onClick={prevWeek}>← Prec</button>
       <div className="week-label">{weekLabel}</div>
@@ -1164,7 +1159,7 @@ function TurniAdmin({ employees, turni, onSetTurno, noteSettimana, onSetNota }) 
     {turniEmps.length === 0 ? (
       <div style={{textAlign:"center",padding:"40px 20px",color:"#9ca3af"}}>
         <div style={{fontSize:36,marginBottom:10}}>📅</div>
-        <div style={{fontWeight:600,fontSize:14}}>Nessun dipendente abilitato ai turni.<br/>Attiva "Includi nei Turni" nel pannello Dipendenti.</div>
+        <div style={{fontWeight:600,fontSize:14}}>Nessun dipendente collegato ai turni.<br/>Attiva "Includi nei Turni" nel pannello Dipendenti e assicurati che il nome corrisponda esattamente a quello su Turni Arcobaleno.</div>
       </div>
     ) : (
       <div className="card" style={{padding:0,overflow:"hidden"}}>
@@ -1185,35 +1180,26 @@ function TurniAdmin({ employees, turni, onSetTurno, noteSettimana, onSetNota }) 
                   <td className="emp-cell" rowSpan={2} style={{verticalAlign:"middle"}}>{emp.avatar} {emp.name}</td>
                   <td className="tipo-cell" style={{color:"#854d0e"}}>☀<br/>P</td>
                   {days.map(d=>{
-                    const ds=toDateStr(d); const chiave=`${emp.id}::${ds}::pranzo`; const val=turni[chiave]||"";
-                    return <td key={ds} style={{padding:"3px"}}>
-                      <select className="turni-select" value={val} onChange={e=>onSetTurno(chiave,e.target.value)}>
-                        {PRANZO_OPTIONS.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
-                      </select>
+                    const ds=toDateStr(d); const val=turni[`${emp.name}::${ds}::pranzo`]||"";
+                    const label=shiftLabel("pranzo",val);
+                    return <td key={ds} style={{textAlign:"center",padding:"5px 3px"}}>
+                      <span className={`turni-badge ${val==="F"?"ferie":val?"turno":"libre"}`}>{label}</span>
                     </td>;
                   })}
                 </tr>,
                 <tr key={`${emp.id}-c`} className="cena-row">
                   <td className="tipo-cell" style={{color:"#1d4ed8"}}>🌙<br/>C</td>
                   {days.map(d=>{
-                    const ds=toDateStr(d); const chiave=`${emp.id}::${ds}::cena`; const val=turni[chiave]||"";
-                    return <td key={ds} style={{padding:"3px"}}>
-                      <select className="turni-select" value={val} onChange={e=>onSetTurno(chiave,e.target.value)}>
-                        {CENA_OPTIONS.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
-                      </select>
+                    const ds=toDateStr(d); const val=turni[`${emp.name}::${ds}::cena`]||"";
+                    const label=shiftLabel("cena",val);
+                    return <td key={ds} style={{textAlign:"center",padding:"5px 3px"}}>
+                      <span className={`turni-badge ${val==="F"?"ferie":val?"turno":"libre"}`}>{label}</span>
                     </td>;
                   })}
                 </tr>
               ])}
             </tbody>
           </table>
-        </div>
-        <div style={{padding:"12px 16px",borderTop:"1px solid #f3f4f6"}}>
-          <div style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:".5px"}}>Note settimana</div>
-          <textarea className="turni-note" value={nota}
-            onChange={e=>setNoteLocal(e.target.value)}
-            onBlur={()=>{ if(noteLocal!==null){ onSetNota(weekKey,noteLocal); setNoteLocal(null); } }}
-            placeholder="Aggiungi una nota per questa settimana..."/>
         </div>
       </div>
     )}
@@ -1253,7 +1239,7 @@ function TurniEmployee({ user, turni }) {
               <tr className="pranzo-row">
                 <td className="tipo-cell" style={{color:"#854d0e",textAlign:"left",paddingLeft:10}}>☀ Pranzo</td>
                 {days.map(d=>{
-                  const ds=toDateStr(d); const val=turni[`${user.id}::${ds}::pranzo`]||"";
+                  const ds=toDateStr(d); const val=turni[`${user.name}::${ds}::pranzo`]||"";
                   const label=shiftLabel("pranzo",val);
                   return <td key={ds} style={{textAlign:"center",padding:"6px 3px"}}>
                     <span className={`turni-badge ${val==="F"?"ferie":val?"turno":"libre"}`}>{label}</span>
@@ -1263,7 +1249,7 @@ function TurniEmployee({ user, turni }) {
               <tr className="cena-row">
                 <td className="tipo-cell" style={{color:"#1d4ed8",textAlign:"left",paddingLeft:10}}>🌙 Cena</td>
                 {days.map(d=>{
-                  const ds=toDateStr(d); const val=turni[`${user.id}::${ds}::cena`]||"";
+                  const ds=toDateStr(d); const val=turni[`${user.name}::${ds}::cena`]||"";
                   const label=shiftLabel("cena",val);
                   return <td key={ds} style={{textAlign:"center",padding:"6px 3px"}}>
                     <span className={`turni-badge ${val==="F"?"ferie":val?"turno":"libre"}`}>{label}</span>
@@ -1279,7 +1265,7 @@ function TurniEmployee({ user, turni }) {
 }
 
 /* ── ADMIN SHELL ── */
-function AdminShell({ employees, records, setRecords, onLogout, onAdd, onEdit, onDelete, turni, onSetTurno, noteSettimana, onSetNota }) {
+function AdminShell({ employees, records, setRecords, onLogout, onAdd, onEdit, onDelete, turni }) {
   const [tab, setTab] = useState("dashboard");
   return (
     <div className="app">
@@ -1301,7 +1287,7 @@ function AdminShell({ employees, records, setRecords, onLogout, onAdd, onEdit, o
         {tab==="dashboard"  && <AdminDashboard records={records} employees={employees}/>}
         {tab==="registro"   && <AdminRegistro  records={records} employees={employees}/>}
         {tab==="dipendenti" && <AdminDipendenti employees={employees} records={records} onAdd={onAdd} onEdit={onEdit} onDelete={onDelete}/>}
-        {tab==="turni"      && <TurniAdmin employees={employees} turni={turni} onSetTurno={onSetTurno} noteSettimana={noteSettimana} onSetNota={onSetNota}/>}
+        {tab==="turni"      && <TurniAdmin employees={employees} turni={turni}/>}
         {tab==="pdf"        && <AdminPDF        records={records} employees={employees}/>}
       </div>
     </div>
@@ -1310,39 +1296,27 @@ function AdminShell({ employees, records, setRecords, onLogout, onAdd, onEdit, o
 
 /* ─── ROOT ───────────────────────────────────────────────────────────── */
 export default function App() {
-  const [employees,     setEmployees    ] = useState([]);
-  const [records,       setRecords      ] = useState([]);
-  const [turni,         setTurni        ] = useState({});
-  const [noteSettimana, setNoteSettimana] = useState({});
-  const [loading,       setLoading      ] = useState(true);
-  const [user,          setUser         ] = useState(null);
-  const [toast,         setToast        ] = useState(null);
+  const [employees, setEmployees] = useState([]);
+  const [records,   setRecords  ] = useState([]);
+  const [turni,     setTurni    ] = useState({});
+  const [loading,   setLoading  ] = useState(true);
+  const [user,      setUser     ] = useState(null);
+  const [toast,     setToast    ] = useState(null);
 
-  // Load all data from Supabase on startup
+  // Load all data on startup
   useEffect(() => {
     async function init() {
       setLoading(true);
-      const [emps, recs, trn, note] = await Promise.all([
-        dbLoadEmployees(), dbLoadRecords(), dbLoadTurni(), dbLoadNoteSettimana()
+      const [emps, recs, trn] = await Promise.all([
+        dbLoadEmployees(), dbLoadRecords(), dbLoadTurniEsterni()
       ]);
       if (emps) setEmployees(emps);
       if (recs) setRecords(recs);
-      if (trn)  setTurni(trn);
-      if (note) setNoteSettimana(note);
+      setTurni(trn);
       setLoading(false);
     }
     init();
   }, []);
-
-  const setTurno = async (chiave, valore) => {
-    setTurni(p => { const n={...p}; if(valore) n[chiave]=valore; else delete n[chiave]; return n; });
-    await dbSetTurno(chiave, valore);
-  };
-
-  const setNota = async (settimana, testo) => {
-    setNoteSettimana(p => { const n={...p}; if(testo) n[settimana]=testo; else delete n[settimana]; return n; });
-    await dbSetNota(settimana, testo);
-  };
 
   const showToast = (msg, type="ok") => setToast({msg, type, k: Date.now()});
 
@@ -1393,8 +1367,7 @@ export default function App() {
           employees={employees} records={records} setRecords={setRecords}
           onLogout={()=>setUser(null)}
           onAdd={addEmp} onEdit={editEmp} onDelete={deleteEmp}
-          turni={turni} onSetTurno={setTurno}
-          noteSettimana={noteSettimana} onSetNota={setNota}
+          turni={turni}
         />
       )}
 
