@@ -762,66 +762,85 @@ function EmployeeScreen({ user, records, onRecord, onLogout, showToast, turni })
 }
 
 /* ── ADMIN DASHBOARD ── */
-function AdminDashboard({ records, employees }) {
-  const presenti  = employees.filter(e=>isCheckedIn(records,e.id));
-  const todayRecs = records.filter(r=>r.time>=today0());
-  const inR       = todayRecs.filter(r=>r.type==="in");
-  const avgMs     = inR.length ? inR.reduce((s,r)=>s+r.time.getTime(),0)/inR.length : null;
+function AdminDashboard({ records, employees, onRecord }) {
+  const [now, setNow] = useState(new Date());
+  useEffect(() => { const i = setInterval(() => setNow(new Date()), 30000); return () => clearInterval(i); }, []);
+
+  const punch = (emp, type) => {
+    const rec = { id: Date.now() + emp.id, empId: emp.id, type, time: new Date(), location: "Admin" };
+    onRecord(rec);
+  };
 
   return <>
-    <div style={{fontWeight:800,fontSize:20,color:"#111827",marginBottom:14,letterSpacing:"-.3px"}}>Dashboard Presenze</div>
-
-    <div className="stats-row">
-      <div className="stat-c blue">
-        <div className="stat-lbl">Presenti ora</div>
-        <div className="stat-val blue">{presenti.length}</div>
-        <div className="stat-sub">su {employees.length} dip.</div>
-      </div>
-      <div className="stat-c">
-        <div className="stat-lbl">Timbrature</div>
-        <div className="stat-val">{todayRecs.length}</div>
-        <div className="stat-sub">oggi</div>
-      </div>
-      <div className="stat-c">
-        <div className="stat-lbl">Media entrata</div>
-        <div className="stat-val" style={{fontSize:20,letterSpacing:0}}>{avgMs?fmtT(new Date(avgMs)):"--:--"}</div>
-        <div className="stat-sub">oggi</div>
-      </div>
+    <div style={{fontWeight:800,fontSize:20,color:"#111827",marginBottom:16,letterSpacing:"-.3px"}}>
+      Dashboard · <span style={{fontWeight:500,fontSize:15,color:"#6b7280"}}>{now.toLocaleDateString("it-IT",{weekday:"long",day:"numeric",month:"long"})}</span>
     </div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:14}}>
+      {employees.map(emp => {
+        const todayRecs = records.filter(r => r.empId===emp.id && r.time>=today0()).sort((a,b)=>a.time-b.time);
+        const ci = todayRecs.length > 0 && todayRecs[todayRecs.length-1].type === "in";
+        const lastIn  = [...todayRecs].filter(r=>r.type==="in").pop();
+        const lastOut = [...todayRecs].filter(r=>r.type==="out").pop();
+        const mins = lastIn && ci ? Math.floor((now - lastIn.time)/60000) : null;
 
-    <div className="sec-t">In sede ora</div>
-    <div className="people-grid" style={{marginBottom:16}}>
-      {presenti.length===0 && <div style={{fontSize:13,color:"#9ca3af",padding:"8px 0"}}>Nessuno in sede</div>}
-      {presenti.map(e=>{
-        const li=records.filter(r=>r.empId===e.id&&r.type==="in"&&r.time>=today0()).sort((a,b)=>b.time-a.time)[0];
-        const mins=li?Math.floor((new Date()-li.time)/60000):0;
-        return <div key={e.id} className="person-row">
-          <div className="person-av">{e.avatar}</div>
-          <div style={{flex:1}}>
-            <div className="person-name">{e.name}</div>
-            <div className="person-sub">{li?`da ${fmtT(li.time)}`:""} · {Math.floor(mins/60)}h{mins%60}m</div>
+        return (
+          <div key={emp.id} style={{background:"#fff",borderRadius:20,padding:"20px 18px",boxShadow:"0 2px 12px rgba(0,0,0,.07),0 0 0 1px rgba(0,0,0,.04)",display:"flex",flexDirection:"column",gap:0,borderTop:`3px solid ${ci?"#22c55e":"#e5e7eb"}`}}>
+            {/* Header */}
+            <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
+              <div style={{fontSize:36,lineHeight:1}}>{emp.avatar}</div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontWeight:800,fontSize:16,color:"#111827",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{emp.name}</div>
+                <div style={{fontSize:12,color:"#9ca3af",marginTop:1}}>{emp.role}</div>
+              </div>
+              <span className={`badge ${ci?"in":"out"}`}><span className="bd"/>{ci?"In sede":"Fuori"}</span>
+            </div>
+
+            {/* Orari */}
+            <div style={{background:"#f9fafb",borderRadius:12,padding:"10px 14px",marginBottom:14,minHeight:52,display:"flex",flexDirection:"column",justifyContent:"center",gap:5}}>
+              {!lastIn && !lastOut && (
+                <div style={{fontSize:12,color:"#9ca3af",fontWeight:500,textAlign:"center"}}>Nessuna timbratura oggi</div>
+              )}
+              {lastIn && (
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <div style={{width:8,height:8,borderRadius:"50%",background:"#22c55e",flexShrink:0}}/>
+                  <span style={{fontSize:12,color:"#6b7280",fontWeight:500}}>Entrata</span>
+                  <span style={{fontWeight:800,fontSize:16,color:"#111827",marginLeft:"auto",fontVariantNumeric:"tabular-nums"}}>{fmtT(lastIn.time)}</span>
+                </div>
+              )}
+              {lastOut && (
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <div style={{width:8,height:8,borderRadius:"50%",background:"#ef4444",flexShrink:0}}/>
+                  <span style={{fontSize:12,color:"#6b7280",fontWeight:500}}>Uscita</span>
+                  <span style={{fontWeight:800,fontSize:16,color:"#111827",marginLeft:"auto",fontVariantNumeric:"tabular-nums"}}>{fmtT(lastOut.time)}</span>
+                </div>
+              )}
+              {ci && mins !== null && (
+                <div style={{fontSize:11,color:"#9ca3af",textAlign:"right",marginTop:2}}>
+                  In sede da {Math.floor(mins/60)}h {mins%60}m
+                </div>
+              )}
+            </div>
+
+            {/* Bottoni */}
+            <div style={{display:"flex",gap:10}}>
+              <button
+                onClick={()=>!ci && punch(emp,"in")}
+                style={{flex:1,height:52,borderRadius:14,border:"none",cursor:ci?"default":"pointer",fontFamily:"Inter,sans-serif",fontSize:14,fontWeight:800,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",gap:7,transition:"all .15s",background:ci?"#d1fae5":"linear-gradient(135deg,#22c55e,#16a34a)",boxShadow:ci?"none":"0 4px 14px rgba(34,197,94,.35)",opacity:ci?0.5:1}}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+                Entrata
+              </button>
+              <button
+                onClick={()=>ci && punch(emp,"out")}
+                style={{flex:1,height:52,borderRadius:14,border:"none",cursor:ci?"pointer":"default",fontFamily:"Inter,sans-serif",fontSize:14,fontWeight:800,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",gap:7,transition:"all .15s",background:ci?"linear-gradient(135deg,#ef4444,#dc2626)":"#fee2e2",boxShadow:ci?"0 4px 14px rgba(239,68,68,.35)":"none",opacity:ci?1:0.5}}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
+                Uscita
+              </button>
+            </div>
           </div>
-          <span className="badge in"><span className="bd"/>In sede</span>
-        </div>;
+        );
       })}
-    </div>
-
-    <div className="sec-t">Ultime timbrature</div>
-    <div className="table-wrap">
-      <table>
-        <thead><tr><th>Dipendente</th><th>Tipo</th><th>Ora</th><th>Sede</th></tr></thead>
-        <tbody>
-          {records.filter(r=>r.time>=today0()).slice(0,10).map(r=>{
-            const e=employees.find(x=>x.id===r.empId);
-            return <tr key={r.id}>
-              <td className="td-name">{e?.avatar} {e?.name}</td>
-              <td><span className={`badge ${r.type}`}><span className="bd"/>{r.type==="in"?"Entrata":"Uscita"}</span></td>
-              <td className="td-time">{fmtT(r.time)}</td>
-              <td style={{color:"#9ca3af",fontSize:12}}>{r.location}</td>
-            </tr>;
-          })}
-        </tbody>
-      </table>
     </div>
   </>;
 }
@@ -1265,7 +1284,7 @@ function TurniEmployee({ user, turni }) {
 }
 
 /* ── ADMIN SHELL ── */
-function AdminShell({ employees, records, setRecords, onLogout, onAdd, onEdit, onDelete, turni }) {
+function AdminShell({ employees, records, setRecords, onLogout, onAdd, onEdit, onDelete, turni, onRecord }) {
   const [tab, setTab] = useState("dashboard");
   return (
     <div className="app">
@@ -1284,7 +1303,7 @@ function AdminShell({ employees, records, setRecords, onLogout, onAdd, onEdit, o
         </div>
       </div>
       <div className="page" style={{paddingTop:20}}>
-        {tab==="dashboard"  && <AdminDashboard records={records} employees={employees}/>}
+        {tab==="dashboard"  && <AdminDashboard records={records} employees={employees} onRecord={onRecord}/>}
         {tab==="registro"   && <AdminRegistro  records={records} employees={employees}/>}
         {tab==="dipendenti" && <AdminDipendenti employees={employees} records={records} onAdd={onAdd} onEdit={onEdit} onDelete={onDelete}/>}
         {tab==="turni"      && <TurniAdmin employees={employees} turni={turni}/>}
@@ -1367,7 +1386,7 @@ export default function App() {
           employees={employees} records={records} setRecords={setRecords}
           onLogout={()=>setUser(null)}
           onAdd={addEmp} onEdit={editEmp} onDelete={deleteEmp}
-          turni={turni}
+          turni={turni} onRecord={addRecord}
         />
       )}
 
