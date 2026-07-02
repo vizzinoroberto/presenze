@@ -40,6 +40,9 @@ async function dbInsertRecord(rec) {
 async function dbDeleteRecord(id) {
   return sbFetch(`timbrature?id=eq.${id}`, { method:"DELETE" });
 }
+async function dbUpdateRecordTime(id, newTime) {
+  return sbFetch(`timbrature?id=eq.${id}`, { method:"PATCH", body: JSON.stringify({ time: newTime.toISOString() }) });
+}
 
 // ── Turni Arcobaleno (sola lettura dall'app esterna)
 const TURNI_URL = "https://rvzikapecolurexiaoqs.supabase.co";
@@ -762,14 +765,45 @@ function EmployeeScreen({ user, records, onRecord, onLogout, showToast, turni })
 }
 
 /* ── ADMIN DASHBOARD ── */
-function AdminDashboard({ records, employees, onRecord }) {
+function AdminDashboard({ records, employees, onRecord, onUpdateRecord }) {
   const [now, setNow] = useState(new Date());
+  const [editing, setEditing] = useState(null); // { rec|null, emp, tipo }
+  const [editVal, setEditVal] = useState("");
   useEffect(() => { const i = setInterval(() => setNow(new Date()), 30000); return () => clearInterval(i); }, []);
+
+  const toDateTimeLocal = d => {
+    const pad = n => String(n).padStart(2,"0");
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  const openEdit = (rec, emp, tipo) => {
+    setEditVal(toDateTimeLocal(rec ? rec.time : new Date()));
+    setEditing({ rec, emp, tipo });
+  };
+
+  const saveEdit = () => {
+    if (!editVal) return;
+    const newTime = new Date(editVal);
+    if (isNaN(newTime.getTime())) return;
+    if (editing.rec) {
+      onUpdateRecord(editing.rec.id, newTime);
+    } else {
+      onRecord({ id: Date.now() + editing.emp.id, empId: editing.emp.id, type: editing.tipo, time: newTime, location: "Admin (manuale)" });
+    }
+    setEditing(null);
+  };
 
   const punch = (emp, type) => {
     const rec = { id: Date.now() + emp.id, empId: emp.id, type, time: new Date(), location: "Admin" };
     onRecord(rec);
   };
+
+  const editBtn = (rec, emp, tipo) => (
+    <button onClick={()=>openEdit(rec, emp, tipo)}
+      style={{background:"none",border:"none",cursor:"pointer",padding:"2px 5px",borderRadius:5,fontSize:13,color:"#9ca3af",lineHeight:1,transition:"all .1s"}}
+      title="Modifica orario"
+    >✏</button>
+  );
 
   return <>
     <div style={{fontWeight:800,fontSize:20,color:"#111827",marginBottom:16,letterSpacing:"-.3px"}}>
@@ -798,13 +832,17 @@ function AdminDashboard({ records, employees, onRecord }) {
             {/* Orari */}
             <div style={{background:"#f9fafb",borderRadius:12,padding:"10px 14px",marginBottom:14,minHeight:52,display:"flex",flexDirection:"column",justifyContent:"center",gap:5}}>
               {!lastIn && !lastOut && (
-                <div style={{fontSize:12,color:"#9ca3af",fontWeight:500,textAlign:"center"}}>Nessuna timbratura oggi</div>
+                <div style={{textAlign:"center"}}>
+                  <div style={{fontSize:12,color:"#9ca3af",fontWeight:500,marginBottom:6}}>Nessuna timbratura oggi</div>
+                  <button onClick={()=>openEdit(null,emp,"in")} style={{fontSize:11,color:"#2563eb",background:"none",border:"1.5px solid #bfdbfe",borderRadius:7,padding:"3px 12px",cursor:"pointer",fontFamily:"Inter,sans-serif",fontWeight:700}}>+ Aggiungi entrata</button>
+                </div>
               )}
               {lastIn && (
                 <div style={{display:"flex",alignItems:"center",gap:8}}>
                   <div style={{width:8,height:8,borderRadius:"50%",background:"#22c55e",flexShrink:0}}/>
                   <span style={{fontSize:12,color:"#6b7280",fontWeight:500}}>Entrata</span>
                   <span style={{fontWeight:800,fontSize:16,color:"#111827",marginLeft:"auto",fontVariantNumeric:"tabular-nums"}}>{fmtT(lastIn.time)}</span>
+                  {editBtn(lastIn,emp,"in")}
                 </div>
               )}
               {lastOut && (
@@ -812,6 +850,7 @@ function AdminDashboard({ records, employees, onRecord }) {
                   <div style={{width:8,height:8,borderRadius:"50%",background:"#ef4444",flexShrink:0}}/>
                   <span style={{fontSize:12,color:"#6b7280",fontWeight:500}}>Uscita</span>
                   <span style={{fontWeight:800,fontSize:16,color:"#111827",marginLeft:"auto",fontVariantNumeric:"tabular-nums"}}>{fmtT(lastOut.time)}</span>
+                  {editBtn(lastOut,emp,"out")}
                 </div>
               )}
               {ci && mins !== null && (
@@ -842,6 +881,29 @@ function AdminDashboard({ records, employees, onRecord }) {
         );
       })}
     </div>
+
+    {editing && (
+      <div className="modal-ov" onClick={e=>e.target===e.currentTarget&&setEditing(null)}>
+        <div className="modal-box" style={{maxWidth:320}}>
+          <div className="modal-title">{editing.rec?"✏️ Modifica orario":"➕ Aggiungi timbratura"}</div>
+          <div style={{fontSize:13,color:"#6b7280",marginBottom:16,display:"flex",alignItems:"center",gap:8}}>
+            <span style={{fontSize:20}}>{editing.emp.avatar}</span>
+            <span style={{fontWeight:600}}>{editing.emp.name}</span>
+            <span style={{background:editing.tipo==="in"?"#dcfce7":"#fee2e2",color:editing.tipo==="in"?"#15803d":"#dc2626",padding:"2px 8px",borderRadius:8,fontSize:11,fontWeight:700,marginLeft:"auto"}}>
+              {editing.tipo==="in"?"▲ Entrata":"▼ Uscita"}
+            </span>
+          </div>
+          <div className="f-field">
+            <span className="f-lbl">Data e ora</span>
+            <input type="datetime-local" className="f-inp" value={editVal} onChange={e=>setEditVal(e.target.value)}/>
+          </div>
+          <div className="modal-btns">
+            <button className="m-btn cx" onClick={()=>setEditing(null)}>Annulla</button>
+            <button className="m-btn ok" onClick={saveEdit}>Salva</button>
+          </div>
+        </div>
+      </div>
+    )}
   </>;
 }
 
@@ -1284,7 +1346,7 @@ function TurniEmployee({ user, turni }) {
 }
 
 /* ── ADMIN SHELL ── */
-function AdminShell({ employees, records, setRecords, onLogout, onAdd, onEdit, onDelete, turni, onRecord }) {
+function AdminShell({ employees, records, setRecords, onLogout, onAdd, onEdit, onDelete, turni, onRecord, onUpdateRecord }) {
   const [tab, setTab] = useState("dashboard");
   return (
     <div className="app">
@@ -1303,7 +1365,7 @@ function AdminShell({ employees, records, setRecords, onLogout, onAdd, onEdit, o
         </div>
       </div>
       <div className="page" style={{paddingTop:20}}>
-        {tab==="dashboard"  && <AdminDashboard records={records} employees={employees} onRecord={onRecord}/>}
+        {tab==="dashboard"  && <AdminDashboard records={records} employees={employees} onRecord={onRecord} onUpdateRecord={onUpdateRecord}/>}
         {tab==="registro"   && <AdminRegistro  records={records} employees={employees}/>}
         {tab==="dipendenti" && <AdminDipendenti employees={employees} records={records} onAdd={onAdd} onEdit={onEdit} onDelete={onDelete}/>}
         {tab==="turni"      && <TurniAdmin employees={employees} turni={turni}/>}
@@ -1340,8 +1402,13 @@ export default function App() {
   const showToast = (msg, type="ok") => setToast({msg, type, k: Date.now()});
 
   const addRecord = async (rec) => {
-    setRecords(p => [rec, ...p]); // optimistic update
+    setRecords(p => [rec, ...p]);
     await dbInsertRecord(rec);
+  };
+
+  const updateRecord = async (id, newTime) => {
+    setRecords(p => p.map(r => r.id===id ? {...r, time: newTime} : r));
+    await dbUpdateRecordTime(id, newTime);
   };
 
   const addEmp = async (emp) => {
@@ -1386,7 +1453,7 @@ export default function App() {
           employees={employees} records={records} setRecords={setRecords}
           onLogout={()=>setUser(null)}
           onAdd={addEmp} onEdit={editEmp} onDelete={deleteEmp}
-          turni={turni} onRecord={addRecord}
+          turni={turni} onRecord={addRecord} onUpdateRecord={updateRecord}
         />
       )}
 
