@@ -40,8 +40,10 @@ async function dbInsertRecord(rec) {
 async function dbDeleteRecord(id) {
   return sbFetch(`timbrature?id=eq.${id}`, { method:"DELETE" });
 }
-async function dbUpdateRecordTime(id, newTime) {
-  return sbFetch(`timbrature?id=eq.${id}`, { method:"PATCH", headers:{"Prefer":"return=representation"}, body: JSON.stringify({ time: newTime.toISOString() }) });
+async function dbUpdateRecordTime(rec, newTime) {
+  await sbFetch(`timbrature?id=eq.${rec.id}`, { method:"DELETE" });
+  return sbFetch("timbrature", { method:"POST", headers:{"Prefer":"return=representation"},
+    body: JSON.stringify({ id: String(rec.id), emp_id: rec.empId, type: rec.type, time: newTime.toISOString(), location: rec.location }) });
 }
 
 // ── Turni Arcobaleno (sola lettura dall'app esterna)
@@ -791,7 +793,7 @@ function AdminDashboard({ records, employees, onRecord, onUpdateRecord }) {
     const newTime = new Date(editVal);
     if (isNaN(newTime.getTime())) return;
     if (editing.rec) {
-      onUpdateRecord(editing.rec.id, newTime);
+      onUpdateRecord(editing.rec, newTime);
     } else {
       onRecord({ id: Date.now() + editing.emp.id, empId: editing.emp.id, type: editing.tipo, time: newTime, location: "Admin (manuale)" });
     }
@@ -1426,9 +1428,9 @@ export default function App() {
     }
   };
 
-  const updateRecord = async (id, newTime) => {
-    setRecords(p => p.map(r => r.id===id ? {...r, time: newTime} : r));
-    await dbUpdateRecordTime(id, newTime);
+  const updateRecord = async (rec, newTime) => {
+    setRecords(p => p.map(r => r.id===rec.id ? {...r, time: newTime} : r));
+    await dbUpdateRecordTime(rec, newTime);
   };
 
   const addEmp = async (emp) => {
