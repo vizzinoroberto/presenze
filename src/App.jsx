@@ -35,13 +35,13 @@ async function dbLoadRecords() {
   return data.map(r => ({ id: r.id, empId: r.emp_id, type: r.type, time: new Date(r.time), location: r.location||"Sede principale" }));
 }
 async function dbInsertRecord(rec) {
-  return sbFetch("timbrature", { method:"POST", body: JSON.stringify({ id: String(rec.id), emp_id: rec.empId, type: rec.type, time: rec.time.toISOString(), location: rec.location }) });
+  return sbFetch("timbrature", { method:"POST", headers:{"Prefer":"return=representation"}, body: JSON.stringify({ id: String(rec.id), emp_id: rec.empId, type: rec.type, time: rec.time.toISOString(), location: rec.location }) });
 }
 async function dbDeleteRecord(id) {
   return sbFetch(`timbrature?id=eq.${id}`, { method:"DELETE" });
 }
 async function dbUpdateRecordTime(id, newTime) {
-  return sbFetch(`timbrature?id=eq.${id}`, { method:"PATCH", body: JSON.stringify({ time: newTime.toISOString() }) });
+  return sbFetch(`timbrature?id=eq.${id}`, { method:"PATCH", headers:{"Prefer":"return=representation"}, body: JSON.stringify({ time: newTime.toISOString() }) });
 }
 
 // ── Turni Arcobaleno (sola lettura dall'app esterna)
@@ -1418,7 +1418,12 @@ export default function App() {
 
   const addRecord = async (rec) => {
     setRecords(p => [rec, ...p]);
-    await dbInsertRecord(rec);
+    const result = await dbInsertRecord(rec);
+    // Supabase può assegnare un id diverso dal nostro temporaneo: sincronizziamo
+    if (result?.[0]) {
+      const realId = result[0].id;
+      setRecords(p => p.map(r => r.id === rec.id ? {...r, id: realId} : r));
+    }
   };
 
   const updateRecord = async (id, newTime) => {
