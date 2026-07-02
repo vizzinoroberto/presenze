@@ -817,7 +817,7 @@ function AdminDashboard({ records, employees, onRecord, onUpdateRecord }) {
       Dashboard · <span style={{fontWeight:500,fontSize:15,color:"#6b7280"}}>{now.toLocaleDateString("it-IT",{weekday:"long",day:"numeric",month:"long"})}</span>
     </div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:14}}>
-      {employees.map(emp => {
+      {[...employees].sort((a,b) => isCheckedIn(records,b.id) - isCheckedIn(records,a.id)).map(emp => {
         const todayRecs = records.filter(r => r.empId===emp.id && r.time>=today0()).sort((a,b)=>a.time-b.time);
         const ci = todayRecs.length > 0 && todayRecs[todayRecs.length-1].type === "in";
         const lastIn  = [...todayRecs].filter(r=>r.type==="in").pop();
