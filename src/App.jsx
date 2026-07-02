@@ -468,6 +468,8 @@ tr:hover td { background: #f9fafb; }
 
 /* ─── AVATARS ────────────────────────────────────────────────────────── */
 const AVATARS = ["👨‍💻","👩‍💼","🎨","📊","💼","👩‍🏫","👨‍🔧","👩‍🔬","👨‍🎨","👩‍💻","👷","👩‍⚕️","🧑‍💼","👨‍🏫","👩‍🔧","🧑‍🔬"];
+const RUOLI   = ["Boss","Chef","Aiuto Cuoco","Lavapiatti","Pulizia","Cameriere","Banconiere","Pizzaiolo"];
+const REPARTI = ["Cucina","Pizzeria","Sala","Banco","Cassa","Pulizie","Lavaggio"];
 
 /* ─── COMPONENTS ─────────────────────────────────────────────────────── */
 function Toast({ msg, type, onDone }) {
@@ -951,8 +953,18 @@ function EmpModal({ emp, onSave, onClose }) {
           <div className="f-field"><span className="f-lbl">PIN 4 cifre *</span><input className="f-inp" value={f.pin} onChange={e=>set("pin",e.target.value.replace(/\D/g,"").slice(0,4))} placeholder="1234" maxLength={4}/></div>
         </div>
         <div className="f-row">
-          <div className="f-field"><span className="f-lbl">Ruolo</span><input className="f-inp" value={f.role} onChange={e=>set("role",e.target.value)} placeholder="Sviluppatore"/></div>
-          <div className="f-field"><span className="f-lbl">Reparto</span><input className="f-inp" value={f.dept} onChange={e=>set("dept",e.target.value)} placeholder="IT"/></div>
+          <div className="f-field"><span className="f-lbl">Ruolo</span>
+            <select className="f-inp" value={f.role} onChange={e=>set("role",e.target.value)} style={{cursor:"pointer"}}>
+              <option value="">— Seleziona ruolo —</option>
+              {RUOLI.map(r=><option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
+          <div className="f-field"><span className="f-lbl">Reparto</span>
+            <select className="f-inp" value={f.dept} onChange={e=>set("dept",e.target.value)} style={{cursor:"pointer"}}>
+              <option value="">— Seleziona reparto —</option>
+              {REPARTI.map(r=><option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
         </div>
         <div className="f-row">
           <div className="f-field"><span className="f-lbl">Email</span><input className="f-inp" type="email" value={f.email} onChange={e=>set("email",e.target.value)} placeholder="m@azienda.it"/></div>
