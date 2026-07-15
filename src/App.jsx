@@ -1244,16 +1244,16 @@ function AdminOrarioManuale({ employees }) {
 
   useEffect(() => { if (!newRow.empId && employees.length>0) setNewRow(r=>({...r, empId: employees[0].id})); }, [employees]);
 
-  // salva sempre tramite update funzionale per evitare chiusure stale
-  const saveLS = d => localStorage.setItem(LS_KEY, JSON.stringify(d));
+  // sincronizza su localStorage ad ogni cambiamento di rows
+  useEffect(() => { localStorage.setItem(LS_KEY, JSON.stringify(rows)); }, [rows]);
+
   const addRow = () => {
     if (!newRow.empId || !newRow.data) return;
-    const entry = { id: Date.now().toString(), ...newRow, empId: Number(newRow.empId) };
-    setRows(prev => { const next=[...prev,entry]; saveLS(next); return next; });
+    setRows(prev => [...prev, { id: Date.now().toString(), ...newRow, empId: Number(newRow.empId) }]);
     setNewRow(r => ({ ...r, d1:"", a1:"", d2:"", a2:"" }));
   };
-  const deleteRow = id => setRows(prev => { const next=prev.filter(r=>r.id!==id); saveLS(next); return next; });
-  const updateRow = (id, field, val) => setRows(prev => { const next=prev.map(r=>r.id===id?{...r,[field]:val}:r); saveLS(next); return next; });
+  const deleteRow = id => setRows(prev => prev.filter(r => r.id !== id));
+  const updateRow = (id, field, val) => setRows(prev => prev.map(r => r.id===id ? {...r,[field]:val} : r));
 
   const calcMin = (da, a) => {
     if (!da || !a) return 0;
