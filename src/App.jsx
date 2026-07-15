@@ -1235,27 +1235,40 @@ ${days.map(d=>`<tr><td>${d.day}</td><td class="h-col">${d.hours>0?d.hours+"h":"�
 
 /* ── ADMIN ORARIO MANUALE ── */
 function AdminOrarioManuale({ employees }) {
-  const LS_KEY = "presenze_orari_manuali_v2";
 
-  // ogni riga: { id, empId (stringa), empName, data, d1, a1, d2, a2 }
-  const [rows, setRows] = useState(() => { try { return JSON.parse(localStorage.getItem(LS_KEY) || "[]"); } catch { return []; } });
+  // ogni riga: { id, empId, empName, data, d1, a1, d2, a2 }
+  const [rows, setRows] = useState([]);
+  const [loadingRows, setLoadingRows] = useState(true);
   const [month, setMonth] = useState(() => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; });
   const [filterEmpId, setFilterEmpId] = useState("");
   const [newRow, setNewRow] = useState({ empId: "", data: new Date().toISOString().split("T")[0], d1:"", a1:"", d2:"", a2:"" });
 
   useEffect(() => { if (!newRow.empId && employees.length>0) setNewRow(r=>({...r, empId: String(employees[0].id)})); }, [employees]);
 
-  // sincronizza su localStorage ad ogni cambiamento di rows
-  useEffect(() => { localStorage.setItem(LS_KEY, JSON.stringify(rows)); }, [rows]);
+  useEffect(() => {
+    sbFetch("orari_manuali?select=*&order=data.asc").then(data => {
+      if (data) setRows(data.map(r => ({ id:r.id, empId:r.emp_id, empName:r.emp_name, data:r.data, d1:r.d1||"", a1:r.a1||"", d2:r.d2||"", a2:r.a2||"" })));
+      setLoadingRows(false);
+    });
+  }, []);
 
-  const addRow = () => {
+  const addRow = async () => {
     if (!newRow.empId || !newRow.data) return;
     const emp = employees.find(e => String(e.id) === String(newRow.empId));
-    setRows(prev => [...prev, { id: Date.now().toString(), empId: String(newRow.empId), empName: emp?.name ?? "", ...newRow }]);
+    const entry = { id: Date.now().toString(), empId: String(newRow.empId), empName: emp?.name ?? "", data: newRow.data, d1: newRow.d1, a1: newRow.a1, d2: newRow.d2, a2: newRow.a2 };
+    setRows(prev => [...prev, entry]);
     setNewRow(r => ({ ...r, d1:"", a1:"", d2:"", a2:"" }));
+    await sbFetch("orari_manuali", { method:"POST", headers:{"Prefer":"return=minimal"}, body: JSON.stringify({ id:entry.id, emp_id:entry.empId, emp_name:entry.empName, data:entry.data, d1:entry.d1, a1:entry.a1, d2:entry.d2, a2:entry.a2 }) });
   };
-  const deleteRow = id => setRows(prev => prev.filter(r => r.id !== id));
-  const updateRow = (id, field, val) => setRows(prev => prev.map(r => r.id===id ? {...r,[field]:val} : r));
+  const deleteRow = async id => {
+    setRows(prev => prev.filter(r => r.id !== id));
+    await sbFetch(`orari_manuali?id=eq.${id}`, { method:"DELETE" });
+  };
+  const updateRow = async (id, field, val) => {
+    setRows(prev => prev.map(r => r.id===id ? {...r,[field]:val} : r));
+    const dbField = field; // d1,a1,d2,a2 sono uguali nel db
+    await sbFetch(`orari_manuali?id=eq.${id}`, { method:"PATCH", headers:{"Prefer":"return=minimal"}, body: JSON.stringify({ [dbField]: val }) });
+  };
 
   const calcMin = (da, a) => {
     if (!da || !a) return 0;
@@ -1345,7 +1358,9 @@ function AdminOrarioManuale({ employees }) {
           </tr>
         </thead>
         <tbody>
-          {filtered.length === 0 ? (
+          {loadingRows ? (
+            <tr><td colSpan={10} style={{padding:"32px",textAlign:"center",color:"#9ca3af",fontSize:14}}>Caricamento…</td></tr>
+          ) : filtered.length === 0 ? (
             <tr><td colSpan={10} style={{padding:"32px",textAlign:"center",color:"#9ca3af",fontSize:14}}>Nessuna voce per {monthLabel()}</td></tr>
           ) : filtered.map(r => {
             const empName = r.empName || employees.find(e=>String(e.id)===String(r.empId))?.name || "—";
