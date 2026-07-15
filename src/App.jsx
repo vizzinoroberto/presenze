@@ -6,10 +6,15 @@ const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 const H = { "Content-Type": "application/json", "apikey": SUPA_KEY, "Authorization": "Bearer " + SUPA_KEY };
 
 async function sbFetch(path, opts={}) {
-  const res = await fetch(SUPA_URL + "/rest/v1/" + path, { ...opts, headers: { ...H, ...opts.headers } });
-  if (!res.ok) { const e = await res.text(); console.error("Supabase error:", e); return null; }
-  const text = await res.text();
-  return text ? JSON.parse(text) : null;
+  try {
+    const res = await fetch(SUPA_URL + "/rest/v1/" + path, { ...opts, headers: { ...H, ...opts.headers } });
+    if (!res.ok) { const e = await res.text(); console.error("Supabase error:", e); return null; }
+    const text = await res.text();
+    return text ? JSON.parse(text) : null;
+  } catch (e) {
+    console.error("Fetch error:", e);
+    return null;
+  }
 }
 
 // ── Dipendenti
@@ -1405,13 +1410,18 @@ export default function App() {
   useEffect(() => {
     async function init() {
       setLoading(true);
-      const [emps, recs, trn] = await Promise.all([
-        dbLoadEmployees(), dbLoadRecords(), dbLoadTurniEsterni()
-      ]);
-      if (emps) setEmployees(emps);
-      if (recs) setRecords(recs);
-      setTurni(trn);
-      setLoading(false);
+      try {
+        const [emps, recs, trn] = await Promise.all([
+          dbLoadEmployees(), dbLoadRecords(), dbLoadTurniEsterni()
+        ]);
+        if (emps) setEmployees(emps);
+        if (recs) setRecords(recs);
+        setTurni(trn || {});
+      } catch (e) {
+        console.error("Init error:", e);
+      } finally {
+        setLoading(false);
+      }
     }
     init();
   }, []);
