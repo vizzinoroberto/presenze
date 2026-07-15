@@ -1236,68 +1236,69 @@ ${days.map(d=>`<tr><td>${d.day}</td><td class="h-col">${d.hours>0?d.hours+"h":"�
 /* ── ADMIN ORARIO MANUALE ── */
 function AdminOrarioManuale({ employees }) {
   const LS_KEY = "presenze_orari_manuali_v2";
-  const load = () => { try { return JSON.parse(localStorage.getItem(LS_KEY) || "[]"); } catch { return []; } };
 
   // ogni riga: { id, empId, data, d1, a1, d2, a2 }
-  const [rows, setRows] = useState(load);
+  const [rows, setRows] = useState(() => { try { return JSON.parse(localStorage.getItem(LS_KEY) || "[]"); } catch { return []; } });
   const [month, setMonth] = useState(() => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; });
   const [newRow, setNewRow] = useState({ empId: employees[0]?.id ?? "", data: new Date().toISOString().split("T")[0], d1:"", a1:"", d2:"", a2:"" });
 
   useEffect(() => { if (!newRow.empId && employees.length>0) setNewRow(r=>({...r, empId: employees[0].id})); }, [employees]);
 
-  const persist = d => { setRows(d); localStorage.setItem(LS_KEY, JSON.stringify(d)); };
-
-  const calcMinutes = (da, a) => {
-    if (!da || !a) return 0;
-    const [dh,dm] = da.split(":").map(Number);
-    const [ah,am] = a.split(":").map(Number);
-    return Math.max(0, (ah*60+am) - (dh*60+dm));
-  };
-  const fmtMin = m => { if (!m) return "—"; const h=Math.floor(m/60), min=m%60; return min>0?`${h}h${min.toString().padStart(2,"0")}`:`${h}h`; };
-
-  const shiftMonth = delta => {
-    const [y, m] = month.split("-").map(Number);
-    const d = new Date(y, m-1+delta, 1);
-    setMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);
-  };
-  const monthLabel = () => {
-    const [y, m] = month.split("-");
-    return new Date(y, m-1, 1).toLocaleDateString("it-IT", { month: "long", year: "numeric" });
-  };
-
-  const filtered = rows.filter(r => r.data.startsWith(month)).sort((a,b) => a.data.localeCompare(b.data)||a.empId-b.empId);
-  const grandTotal = filtered.reduce((s,r) => s + calcMinutes(r.d1,r.a1) + calcMinutes(r.d2,r.a2), 0);
-
+  // salva sempre tramite update funzionale per evitare chiusure stale
+  const saveLS = d => localStorage.setItem(LS_KEY, JSON.stringify(d));
   const addRow = () => {
     if (!newRow.empId || !newRow.data) return;
-    persist([...rows, { id: Date.now().toString(), ...newRow, empId: Number(newRow.empId) }]);
+    const entry = { id: Date.now().toString(), ...newRow, empId: Number(newRow.empId) };
+    setRows(prev => { const next=[...prev,entry]; saveLS(next); return next; });
     setNewRow(r => ({ ...r, d1:"", a1:"", d2:"", a2:"" }));
   };
-  const deleteRow = id => persist(rows.filter(r => r.id !== id));
-  const updateRow = (id, field, val) => persist(rows.map(r => r.id===id ? {...r,[field]:val} : r));
+  const deleteRow = id => setRows(prev => { const next=prev.filter(r=>r.id!==id); saveLS(next); return next; });
+  const updateRow = (id, field, val) => setRows(prev => { const next=prev.map(r=>r.id===id?{...r,[field]:val}:r); saveLS(next); return next; });
 
-  const th = { padding:"8px 6px", fontSize:11, fontWeight:700, color:"#6b7280", textTransform:"uppercase", letterSpacing:".4px", borderBottom:"2px solid #e5e7eb", textAlign:"center", whiteSpace:"nowrap" };
-  const td = { padding:"6px 6px", textAlign:"center", borderBottom:"1px solid #f3f4f6" };
-  const timeInp = (val, onChange) => (
-    <input type="time" value={val} onChange={e=>onChange(e.target.value)}
-      style={{width:80,padding:"4px 6px",border:"1.5px solid #e5e7eb",borderRadius:6,fontFamily:"Inter,sans-serif",fontSize:13,textAlign:"center"}}/>
-  );
+  const calcMin = (da, a) => {
+    if (!da || !a) return 0;
+    const [dh,dm]=da.split(":").map(Number), [ah,am]=a.split(":").map(Number);
+    return Math.max(0,(ah*60+am)-(dh*60+dm));
+  };
+  const fmtMin = m => { if(!m) return "—"; const h=Math.floor(m/60),min=m%60; return min>0?`${h}h${min.toString().padStart(2,"0")}`:`${h}h`; };
+
+  const shiftMonth = delta => {
+    const [y,m]=month.split("-").map(Number), d=new Date(y,m-1+delta,1);
+    setMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);
+  };
+  const monthLabel = () => { const [y,m]=month.split("-"); return new Date(y,m-1,1).toLocaleDateString("it-IT",{month:"long",year:"numeric"}); };
+
+  const filtered = rows.filter(r=>r.data.startsWith(month)).sort((a,b)=>a.data.localeCompare(b.data)||a.empId-b.empId);
+  const grandTotal = filtered.reduce((s,r)=>s+calcMin(r.d1,r.a1)+calcMin(r.d2,r.a2),0);
+
+  // stili compatti
+  const th = {padding:"7px 4px",fontSize:10,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:".3px",borderBottom:"2px solid #e5e7eb",textAlign:"center",whiteSpace:"nowrap"};
+  const td = {padding:"5px 4px",textAlign:"center",borderBottom:"1px solid #f3f4f6"};
+  const tInp = (val,cb) => <input type="time" value={val} onChange={e=>cb(e.target.value)} style={{width:72,padding:"3px 4px",border:"1.5px solid #e5e7eb",borderRadius:5,fontFamily:"Inter,sans-serif",fontSize:12,textAlign:"center"}}/>;
 
   return <>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}>
       <div style={{fontWeight:800,fontSize:20,color:"#111827",letterSpacing:"-.3px"}}>Orario manuale</div>
-      <div style={{display:"flex",alignItems:"center",gap:8}}>
-        <button onClick={()=>shiftMonth(-1)} style={{padding:"6px 12px",borderRadius:8,border:"1.5px solid #e5e7eb",background:"#fff",cursor:"pointer",fontSize:14}}>←</button>
-        <span style={{fontSize:15,fontWeight:700,color:"#111827",minWidth:140,textAlign:"center",textTransform:"capitalize"}}>{monthLabel()}</span>
-        <button onClick={()=>shiftMonth(1)}  style={{padding:"6px 12px",borderRadius:8,border:"1.5px solid #e5e7eb",background:"#fff",cursor:"pointer",fontSize:14}}>→</button>
+      <div style={{display:"flex",alignItems:"center",gap:6}}>
+        <button onClick={()=>shiftMonth(-1)} style={{padding:"5px 10px",borderRadius:7,border:"1.5px solid #e5e7eb",background:"#fff",cursor:"pointer",fontSize:13}}>←</button>
+        <span style={{fontSize:14,fontWeight:700,color:"#111827",minWidth:130,textAlign:"center",textTransform:"capitalize"}}>{monthLabel()}</span>
+        <button onClick={()=>shiftMonth(1)}  style={{padding:"5px 10px",borderRadius:7,border:"1.5px solid #e5e7eb",background:"#fff",cursor:"pointer",fontSize:13}}>→</button>
       </div>
     </div>
 
-    <div style={{overflowX:"auto"}}>
-      <table style={{width:"100%",borderCollapse:"collapse",background:"#fff",borderRadius:12,overflow:"hidden",boxShadow:"0 1px 3px rgba(0,0,0,.06)"}}>
+    <div className="table-wrap">
+      <table style={{width:"100%",borderCollapse:"collapse",tableLayout:"fixed"}}>
+        <colgroup>
+          <col style={{width:"16%"}}/>
+          <col style={{width:"9%"}}/>
+          <col style={{width:"9%"}}/><col style={{width:"9%"}}/><col style={{width:"7%"}}/>
+          <col style={{width:"9%"}}/><col style={{width:"9%"}}/><col style={{width:"7%"}}/>
+          <col style={{width:"8%"}}/>
+          <col style={{width:"7%"}}/>
+        </colgroup>
         <thead>
           <tr style={{background:"#f9fafb"}}>
-            <th style={{...th,textAlign:"left",paddingLeft:14}}>Dipendente</th>
+            <th style={{...th,textAlign:"left",paddingLeft:10}}>Dipendente</th>
             <th style={th}>Giorno</th>
             <th style={{...th,background:"#eff6ff"}}>Da</th>
             <th style={{...th,background:"#eff6ff"}}>A</th>
@@ -1308,54 +1309,47 @@ function AdminOrarioManuale({ employees }) {
             <th style={{...th,background:"#fef9c3",color:"#854d0e"}}>Gran Tot</th>
             <th style={th}/>
           </tr>
-          {/* riga nuova voce */}
           <tr style={{background:"#f3f4f6"}}>
-            <td style={{...td,textAlign:"left",paddingLeft:14}}>
+            <td style={{...td,textAlign:"left",paddingLeft:10}}>
               <select value={newRow.empId} onChange={e=>setNewRow(r=>({...r,empId:e.target.value}))}
-                style={{padding:"4px 6px",borderRadius:6,border:"1.5px solid #e5e7eb",fontFamily:"Inter,sans-serif",fontSize:13,maxWidth:150}}>
-                {employees.map(e=><option key={e.id} value={e.id}>{e.avatar} {e.name}</option>)}
+                style={{width:"100%",padding:"3px 4px",borderRadius:5,border:"1.5px solid #e5e7eb",fontFamily:"Inter,sans-serif",fontSize:12}}>
+                {employees.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}
               </select>
             </td>
             <td style={td}>
               <input type="date" value={newRow.data} onChange={e=>setNewRow(r=>({...r,data:e.target.value}))}
-                style={{padding:"4px 6px",borderRadius:6,border:"1.5px solid #e5e7eb",fontFamily:"Inter,sans-serif",fontSize:13}}/>
+                style={{width:"100%",padding:"3px 4px",borderRadius:5,border:"1.5px solid #e5e7eb",fontFamily:"Inter,sans-serif",fontSize:11}}/>
             </td>
-            <td style={{...td,background:"#eff6ff"}}>{timeInp(newRow.d1, v=>setNewRow(r=>({...r,d1:v})))}</td>
-            <td style={{...td,background:"#eff6ff"}}>{timeInp(newRow.a1, v=>setNewRow(r=>({...r,a1:v})))}</td>
-            <td style={{...td,background:"#dbeafe",fontWeight:700,color:"#1d4ed8"}}>{fmtMin(calcMinutes(newRow.d1,newRow.a1))}</td>
-            <td style={{...td,background:"#f0fdf4"}}>{timeInp(newRow.d2, v=>setNewRow(r=>({...r,d2:v})))}</td>
-            <td style={{...td,background:"#f0fdf4"}}>{timeInp(newRow.a2, v=>setNewRow(r=>({...r,a2:v})))}</td>
-            <td style={{...td,background:"#dcfce7",fontWeight:700,color:"#15803d"}}>{fmtMin(calcMinutes(newRow.d2,newRow.a2))}</td>
-            <td style={{...td,background:"#fef9c3",fontWeight:800,color:"#854d0e"}}>{fmtMin(calcMinutes(newRow.d1,newRow.a1)+calcMinutes(newRow.d2,newRow.a2))}</td>
-            <td style={td}>
-              <button onClick={addRow} style={{padding:"5px 12px",borderRadius:6,border:"none",background:"#2563eb",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer"}}>+ Aggiungi</button>
-            </td>
+            <td style={{...td,background:"#eff6ff"}}>{tInp(newRow.d1,v=>setNewRow(r=>({...r,d1:v})))}</td>
+            <td style={{...td,background:"#eff6ff"}}>{tInp(newRow.a1,v=>setNewRow(r=>({...r,a1:v})))}</td>
+            <td style={{...td,background:"#dbeafe",fontWeight:700,color:"#1d4ed8",fontSize:12}}>{fmtMin(calcMin(newRow.d1,newRow.a1))}</td>
+            <td style={{...td,background:"#f0fdf4"}}>{tInp(newRow.d2,v=>setNewRow(r=>({...r,d2:v})))}</td>
+            <td style={{...td,background:"#f0fdf4"}}>{tInp(newRow.a2,v=>setNewRow(r=>({...r,a2:v})))}</td>
+            <td style={{...td,background:"#dcfce7",fontWeight:700,color:"#15803d",fontSize:12}}>{fmtMin(calcMin(newRow.d2,newRow.a2))}</td>
+            <td style={{...td,background:"#fef9c3",fontWeight:800,color:"#854d0e",fontSize:12}}>{fmtMin(calcMin(newRow.d1,newRow.a1)+calcMin(newRow.d2,newRow.a2))}</td>
+            <td style={td}><button onClick={addRow} style={{padding:"4px 8px",borderRadius:5,border:"none",background:"#2563eb",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",whiteSpace:"nowrap"}}>+ Agg.</button></td>
           </tr>
         </thead>
         <tbody>
           {filtered.length === 0 ? (
-            <tr><td colSpan={10} style={{padding:"36px",textAlign:"center",color:"#9ca3af",fontSize:14}}>Nessuna voce per {monthLabel()}</td></tr>
+            <tr><td colSpan={10} style={{padding:"32px",textAlign:"center",color:"#9ca3af",fontSize:14}}>Nessuna voce per {monthLabel()}</td></tr>
           ) : filtered.map(r => {
             const emp = employees.find(e=>e.id===r.empId);
             const d = new Date(r.data+"T00:00:00");
             const giorno = d.toLocaleDateString("it-IT",{weekday:"short",day:"2-digit",month:"2-digit"});
-            const t1 = calcMinutes(r.d1,r.a1), t2 = calcMinutes(r.d2,r.a2);
+            const t1=calcMin(r.d1,r.a1), t2=calcMin(r.d2,r.a2);
             return (
               <tr key={r.id} style={{borderBottom:"1px solid #f3f4f6"}}>
-                <td style={{...td,textAlign:"left",paddingLeft:14,fontWeight:600,color:"#111827"}}>
-                  {emp?.avatar} {emp?.name ?? "—"}
-                </td>
-                <td style={{...td,color:"#6b7280",fontSize:13,textTransform:"capitalize"}}>{giorno}</td>
-                <td style={{...td,background:"#f8fbff"}}>{timeInp(r.d1, v=>updateRow(r.id,"d1",v))}</td>
-                <td style={{...td,background:"#f8fbff"}}>{timeInp(r.a1, v=>updateRow(r.id,"a1",v))}</td>
-                <td style={{...td,background:"#eff6ff",fontWeight:700,color:"#1d4ed8",fontVariantNumeric:"tabular-nums"}}>{fmtMin(t1)}</td>
-                <td style={{...td,background:"#f7fdf7"}}>{timeInp(r.d2, v=>updateRow(r.id,"d2",v))}</td>
-                <td style={{...td,background:"#f7fdf7"}}>{timeInp(r.a2, v=>updateRow(r.id,"a2",v))}</td>
-                <td style={{...td,background:"#f0fdf4",fontWeight:700,color:"#15803d",fontVariantNumeric:"tabular-nums"}}>{fmtMin(t2)}</td>
-                <td style={{...td,background:"#fefce8",fontWeight:800,color:"#854d0e",fontVariantNumeric:"tabular-nums"}}>{fmtMin(t1+t2)}</td>
-                <td style={td}>
-                  <button onClick={()=>deleteRow(r.id)} style={{padding:"4px 8px",borderRadius:6,border:"none",background:"#fef2f2",color:"#dc2626",fontWeight:700,fontSize:12,cursor:"pointer"}}>✕</button>
-                </td>
+                <td style={{...td,textAlign:"left",paddingLeft:10,fontWeight:600,color:"#111827",fontSize:12,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{emp?.name ?? "—"}</td>
+                <td style={{...td,color:"#6b7280",fontSize:11,textTransform:"capitalize"}}>{giorno}</td>
+                <td style={{...td,background:"#f8fbff"}}>{tInp(r.d1,v=>updateRow(r.id,"d1",v))}</td>
+                <td style={{...td,background:"#f8fbff"}}>{tInp(r.a1,v=>updateRow(r.id,"a1",v))}</td>
+                <td style={{...td,background:"#eff6ff",fontWeight:700,color:"#1d4ed8",fontSize:12,fontVariantNumeric:"tabular-nums"}}>{fmtMin(t1)}</td>
+                <td style={{...td,background:"#f7fdf7"}}>{tInp(r.d2,v=>updateRow(r.id,"d2",v))}</td>
+                <td style={{...td,background:"#f7fdf7"}}>{tInp(r.a2,v=>updateRow(r.id,"a2",v))}</td>
+                <td style={{...td,background:"#f0fdf4",fontWeight:700,color:"#15803d",fontSize:12,fontVariantNumeric:"tabular-nums"}}>{fmtMin(t2)}</td>
+                <td style={{...td,background:"#fefce8",fontWeight:800,color:"#854d0e",fontSize:12,fontVariantNumeric:"tabular-nums"}}>{fmtMin(t1+t2)}</td>
+                <td style={td}><button onClick={()=>deleteRow(r.id)} style={{padding:"3px 7px",borderRadius:5,border:"none",background:"#fef2f2",color:"#dc2626",fontWeight:700,fontSize:11,cursor:"pointer"}}>✕</button></td>
               </tr>
             );
           })}
