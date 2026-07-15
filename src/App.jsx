@@ -1237,19 +1237,21 @@ ${days.map(d=>`<tr><td>${d.day}</td><td class="h-col">${d.hours>0?d.hours+"h":"�
 function AdminOrarioManuale({ employees }) {
   const LS_KEY = "presenze_orari_manuali_v2";
 
-  // ogni riga: { id, empId, data, d1, a1, d2, a2 }
+  // ogni riga: { id, empId (stringa), empName, data, d1, a1, d2, a2 }
   const [rows, setRows] = useState(() => { try { return JSON.parse(localStorage.getItem(LS_KEY) || "[]"); } catch { return []; } });
   const [month, setMonth] = useState(() => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; });
-  const [newRow, setNewRow] = useState({ empId: employees[0]?.id ?? "", data: new Date().toISOString().split("T")[0], d1:"", a1:"", d2:"", a2:"" });
+  const [filterEmpId, setFilterEmpId] = useState("");
+  const [newRow, setNewRow] = useState({ empId: "", data: new Date().toISOString().split("T")[0], d1:"", a1:"", d2:"", a2:"" });
 
-  useEffect(() => { if (!newRow.empId && employees.length>0) setNewRow(r=>({...r, empId: employees[0].id})); }, [employees]);
+  useEffect(() => { if (!newRow.empId && employees.length>0) setNewRow(r=>({...r, empId: String(employees[0].id)})); }, [employees]);
 
   // sincronizza su localStorage ad ogni cambiamento di rows
   useEffect(() => { localStorage.setItem(LS_KEY, JSON.stringify(rows)); }, [rows]);
 
   const addRow = () => {
     if (!newRow.empId || !newRow.data) return;
-    setRows(prev => [...prev, { id: Date.now().toString(), ...newRow, empId: Number(newRow.empId) }]);
+    const emp = employees.find(e => String(e.id) === String(newRow.empId));
+    setRows(prev => [...prev, { id: Date.now().toString(), empId: String(newRow.empId), empName: emp?.name ?? "", ...newRow }]);
     setNewRow(r => ({ ...r, d1:"", a1:"", d2:"", a2:"" }));
   };
   const deleteRow = id => setRows(prev => prev.filter(r => r.id !== id));
@@ -1268,8 +1270,11 @@ function AdminOrarioManuale({ employees }) {
   };
   const monthLabel = () => { const [y,m]=month.split("-"); return new Date(y,m-1,1).toLocaleDateString("it-IT",{month:"long",year:"numeric"}); };
 
-  const filtered = rows.filter(r=>r.data.startsWith(month)).sort((a,b)=>a.data.localeCompare(b.data)||a.empId-b.empId);
-  const grandTotal = filtered.reduce((s,r)=>s+calcMin(r.d1,r.a1)+calcMin(r.d2,r.a2),0);
+  const filtered = rows
+    .filter(r => r.data.startsWith(month))
+    .filter(r => !filterEmpId || String(r.empId) === filterEmpId)
+    .sort((a,b) => a.data.localeCompare(b.data));
+  const filteredTotal = filtered.reduce((s,r)=>s+calcMin(r.d1,r.a1)+calcMin(r.d2,r.a2),0);
 
   // stili compatti
   const th = {padding:"7px 4px",fontSize:10,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:".3px",borderBottom:"2px solid #e5e7eb",textAlign:"center",whiteSpace:"nowrap"};
@@ -1279,10 +1284,19 @@ function AdminOrarioManuale({ employees }) {
   return <>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}>
       <div style={{fontWeight:800,fontSize:20,color:"#111827",letterSpacing:"-.3px"}}>Orario manuale</div>
-      <div style={{display:"flex",alignItems:"center",gap:6}}>
-        <button onClick={()=>shiftMonth(-1)} style={{padding:"5px 10px",borderRadius:7,border:"1.5px solid #e5e7eb",background:"#fff",cursor:"pointer",fontSize:13}}>←</button>
-        <span style={{fontSize:14,fontWeight:700,color:"#111827",minWidth:130,textAlign:"center",textTransform:"capitalize"}}>{monthLabel()}</span>
-        <button onClick={()=>shiftMonth(1)}  style={{padding:"5px 10px",borderRadius:7,border:"1.5px solid #e5e7eb",background:"#fff",cursor:"pointer",fontSize:13}}>→</button>
+      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+        {/* filtro dipendente */}
+        <select value={filterEmpId} onChange={e=>setFilterEmpId(e.target.value)}
+          style={{padding:"5px 10px",borderRadius:7,border:"1.5px solid #e5e7eb",fontFamily:"Inter,sans-serif",fontSize:13,fontWeight:600,color:"#111827",background:"#fff"}}>
+          <option value="">Tutti i dipendenti</option>
+          {employees.map(e=><option key={e.id} value={String(e.id)}>{e.name}</option>)}
+        </select>
+        {/* navigazione mese */}
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <button onClick={()=>shiftMonth(-1)} style={{padding:"5px 10px",borderRadius:7,border:"1.5px solid #e5e7eb",background:"#fff",cursor:"pointer",fontSize:13}}>←</button>
+          <span style={{fontSize:14,fontWeight:700,color:"#111827",minWidth:130,textAlign:"center",textTransform:"capitalize"}}>{monthLabel()}</span>
+          <button onClick={()=>shiftMonth(1)}  style={{padding:"5px 10px",borderRadius:7,border:"1.5px solid #e5e7eb",background:"#fff",cursor:"pointer",fontSize:13}}>→</button>
+        </div>
       </div>
     </div>
 
@@ -1313,7 +1327,7 @@ function AdminOrarioManuale({ employees }) {
             <td style={{...td,textAlign:"left",paddingLeft:10}}>
               <select value={newRow.empId} onChange={e=>setNewRow(r=>({...r,empId:e.target.value}))}
                 style={{width:"100%",padding:"3px 4px",borderRadius:5,border:"1.5px solid #e5e7eb",fontFamily:"Inter,sans-serif",fontSize:12}}>
-                {employees.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}
+                {employees.map(e=><option key={e.id} value={String(e.id)}>{e.name}</option>)}
               </select>
             </td>
             <td style={td}>
@@ -1334,13 +1348,13 @@ function AdminOrarioManuale({ employees }) {
           {filtered.length === 0 ? (
             <tr><td colSpan={10} style={{padding:"32px",textAlign:"center",color:"#9ca3af",fontSize:14}}>Nessuna voce per {monthLabel()}</td></tr>
           ) : filtered.map(r => {
-            const emp = employees.find(e=>e.id===r.empId);
+            const empName = r.empName || employees.find(e=>String(e.id)===String(r.empId))?.name || "—";
             const d = new Date(r.data+"T00:00:00");
             const giorno = d.toLocaleDateString("it-IT",{weekday:"short",day:"2-digit",month:"2-digit"});
             const t1=calcMin(r.d1,r.a1), t2=calcMin(r.d2,r.a2);
             return (
               <tr key={r.id} style={{borderBottom:"1px solid #f3f4f6"}}>
-                <td style={{...td,textAlign:"left",paddingLeft:10,fontWeight:600,color:"#111827",fontSize:12,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{emp?.name ?? "—"}</td>
+                <td style={{...td,textAlign:"left",paddingLeft:10,fontWeight:600,color:"#111827",fontSize:12,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{empName}</td>
                 <td style={{...td,color:"#6b7280",fontSize:11,textTransform:"capitalize"}}>{giorno}</td>
                 <td style={{...td,background:"#f8fbff"}}>{tInp(r.d1,v=>updateRow(r.id,"d1",v))}</td>
                 <td style={{...td,background:"#f8fbff"}}>{tInp(r.a1,v=>updateRow(r.id,"a1",v))}</td>
@@ -1354,11 +1368,13 @@ function AdminOrarioManuale({ employees }) {
             );
           })}
         </tbody>
-        {filtered.length > 0 && (
+        {filtered.length > 0 && filterEmpId && (
           <tfoot>
             <tr style={{background:"#f9fafb"}}>
-              <td colSpan={8} style={{padding:"10px 14px",fontWeight:700,color:"#111827",borderTop:"2px solid #e5e7eb",textAlign:"right"}}>Totale mese</td>
-              <td style={{padding:"10px 6px",textAlign:"center",fontWeight:800,color:"#854d0e",fontSize:15,borderTop:"2px solid #e5e7eb",fontVariantNumeric:"tabular-nums",background:"#fef9c3"}}>{fmtMin(grandTotal)}</td>
+              <td colSpan={8} style={{padding:"10px 14px",fontWeight:700,color:"#111827",borderTop:"2px solid #e5e7eb",textAlign:"right"}}>
+                Totale {employees.find(e=>String(e.id)===filterEmpId)?.name}
+              </td>
+              <td style={{padding:"10px 6px",textAlign:"center",fontWeight:800,color:"#854d0e",fontSize:15,borderTop:"2px solid #e5e7eb",fontVariantNumeric:"tabular-nums",background:"#fef9c3"}}>{fmtMin(filteredTotal)}</td>
               <td style={{borderTop:"2px solid #e5e7eb"}}/>
             </tr>
           </tfoot>
