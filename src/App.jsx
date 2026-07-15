@@ -1235,191 +1235,141 @@ ${days.map(d=>`<tr><td>${d.day}</td><td class="h-col">${d.hours>0?d.hours+"h":"�
 
 /* ── ADMIN ORARIO MANUALE ── */
 function AdminOrarioManuale({ employees }) {
-  const LS_KEY = "presenze_orari_manuali";
+  const LS_KEY = "presenze_orari_manuali_v2";
   const load = () => { try { return JSON.parse(localStorage.getItem(LS_KEY) || "[]"); } catch { return []; } };
 
-  const [entries, setEntries] = useState(load);
-  const [empId, setEmpId] = useState(null);
-  const [viewMode, setViewMode] = useState("mese");
+  // ogni riga: { id, empId, data, d1, a1, d2, a2 }
+  const [rows, setRows] = useState(load);
   const [month, setMonth] = useState(() => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; });
-  const [from, setFrom] = useState(() => { const d=new Date(); d.setDate(1); return d.toISOString().split("T")[0]; });
-  const [to, setTo] = useState(() => new Date().toISOString().split("T")[0]);
-  const [form, setForm] = useState({ data: new Date().toISOString().split("T")[0], ore: "" });
-  const [editing, setEditing] = useState(null);
+  const [newRow, setNewRow] = useState({ empId: employees[0]?.id ?? "", data: new Date().toISOString().split("T")[0], d1:"", a1:"", d2:"", a2:"" });
 
-  useEffect(() => { if (!empId && employees.length > 0) setEmpId(employees[0].id); }, [employees, empId]);
+  useEffect(() => { if (!newRow.empId && employees.length>0) setNewRow(r=>({...r, empId: employees[0].id})); }, [employees]);
 
-  const persist = d => { setEntries(d); localStorage.setItem(LS_KEY, JSON.stringify(d)); };
+  const persist = d => { setRows(d); localStorage.setItem(LS_KEY, JSON.stringify(d)); };
 
-  const filtered = entries.filter(e => {
-    if (e.empId !== empId) return false;
-    if (viewMode === "mese") return e.data.startsWith(month);
-    return e.data >= from && e.data <= to;
-  }).sort((a, b) => a.data.localeCompare(b.data));
-
-  const total = filtered.reduce((s, e) => s + (Number(e.ore) || 0), 0);
-
-  const fmtOre = n => { const h=Math.floor(n), m=Math.round((n-h)*60); return m>0?`${h}h ${m}m`:`${h}h`; };
-
-  const monthLabel = () => {
-    const [y, m] = month.split("-");
-    return new Date(y, m-1, 1).toLocaleDateString("it-IT", { month: "long", year: "numeric" });
+  const calcMinutes = (da, a) => {
+    if (!da || !a) return 0;
+    const [dh,dm] = da.split(":").map(Number);
+    const [ah,am] = a.split(":").map(Number);
+    return Math.max(0, (ah*60+am) - (dh*60+dm));
   };
+  const fmtMin = m => { if (!m) return "—"; const h=Math.floor(m/60), min=m%60; return min>0?`${h}h${min.toString().padStart(2,"0")}`:`${h}h`; };
+
   const shiftMonth = delta => {
     const [y, m] = month.split("-").map(Number);
     const d = new Date(y, m-1+delta, 1);
     setMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);
   };
-
-  const addEntry = () => {
-    if (!form.data || !form.ore || !empId) return;
-    persist([...entries, { id: Date.now().toString(), empId, data: form.data, ore: Number(form.ore) }]);
-    setForm(f => ({ ...f, ore: "" }));
-  };
-  const deleteEntry = id => persist(entries.filter(e => e.id !== id));
-  const commitEdit = () => {
-    if (!editing) return;
-    persist(entries.map(e => e.id === editing.id ? { ...e, ore: Number(editing.ore) } : e));
-    setEditing(null);
+  const monthLabel = () => {
+    const [y, m] = month.split("-");
+    return new Date(y, m-1, 1).toLocaleDateString("it-IT", { month: "long", year: "numeric" });
   };
 
-  const inp = { padding:"8px 10px", borderRadius:8, border:"1.5px solid #e5e7eb", fontFamily:"Inter,sans-serif", fontSize:13 };
-  const lbl = { fontSize:11, fontWeight:600, color:"#6b7280", display:"block", marginBottom:4 };
+  const filtered = rows.filter(r => r.data.startsWith(month)).sort((a,b) => a.data.localeCompare(b.data)||a.empId-b.empId);
+  const grandTotal = filtered.reduce((s,r) => s + calcMinutes(r.d1,r.a1) + calcMinutes(r.d2,r.a2), 0);
+
+  const addRow = () => {
+    if (!newRow.empId || !newRow.data) return;
+    persist([...rows, { id: Date.now().toString(), ...newRow, empId: Number(newRow.empId) }]);
+    setNewRow(r => ({ ...r, d1:"", a1:"", d2:"", a2:"" }));
+  };
+  const deleteRow = id => persist(rows.filter(r => r.id !== id));
+  const updateRow = (id, field, val) => persist(rows.map(r => r.id===id ? {...r,[field]:val} : r));
+
+  const th = { padding:"8px 6px", fontSize:11, fontWeight:700, color:"#6b7280", textTransform:"uppercase", letterSpacing:".4px", borderBottom:"2px solid #e5e7eb", textAlign:"center", whiteSpace:"nowrap" };
+  const td = { padding:"6px 6px", textAlign:"center", borderBottom:"1px solid #f3f4f6" };
+  const timeInp = (val, onChange) => (
+    <input type="time" value={val} onChange={e=>onChange(e.target.value)}
+      style={{width:80,padding:"4px 6px",border:"1.5px solid #e5e7eb",borderRadius:6,fontFamily:"Inter,sans-serif",fontSize:13,textAlign:"center"}}/>
+  );
 
   return <>
-    <div style={{fontWeight:800,fontSize:20,color:"#111827",marginBottom:16,letterSpacing:"-.3px"}}>Orario manuale</div>
-
-    <div className="card" style={{padding:16,marginBottom:12}}>
-      <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"flex-end"}}>
-        <div>
-          <label style={lbl}>DIPENDENTE</label>
-          <select value={empId ?? ""} onChange={e => setEmpId(Number(e.target.value))}
-            style={{...inp,fontWeight:600,color:"#111827",background:"#fff"}}>
-            {employees.map(e => <option key={e.id} value={e.id}>{e.avatar} {e.name}</option>)}
-          </select>
-        </div>
-        <div>
-          <label style={lbl}>PERIODO</label>
-          <div style={{display:"flex",gap:4}}>
-            {["mese","intervallo"].map(v => (
-              <button key={v} onClick={()=>setViewMode(v)} style={{padding:"8px 14px",borderRadius:8,border:"1.5px solid",borderColor:viewMode===v?"#2563eb":"#e5e7eb",background:viewMode===v?"#eff6ff":"#fff",color:viewMode===v?"#2563eb":"#6b7280",fontFamily:"Inter,sans-serif",fontSize:13,fontWeight:600,cursor:"pointer",textTransform:"capitalize"}}>
-                {v==="mese"?"Mese":"Intervallo"}
-              </button>
-            ))}
-          </div>
-        </div>
-        {viewMode === "mese" ? (
-          <div style={{display:"flex",alignItems:"flex-end",gap:8}}>
-            <button onClick={()=>shiftMonth(-1)} style={{...inp,cursor:"pointer",padding:"8px 12px"}}>←</button>
-            <span style={{fontSize:15,fontWeight:700,color:"#111827",minWidth:150,textAlign:"center",paddingBottom:8,textTransform:"capitalize"}}>{monthLabel()}</span>
-            <button onClick={()=>shiftMonth(1)}  style={{...inp,cursor:"pointer",padding:"8px 12px"}}>→</button>
-          </div>
-        ) : (
-          <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"flex-end"}}>
-            <div><label style={lbl}>DAL</label><input type="date" value={from} onChange={e=>setFrom(e.target.value)} style={inp}/></div>
-            <div><label style={lbl}>AL</label><input type="date" value={to} onChange={e=>setTo(e.target.value)} style={inp}/></div>
-          </div>
-        )}
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
+      <div style={{fontWeight:800,fontSize:20,color:"#111827",letterSpacing:"-.3px"}}>Orario manuale</div>
+      <div style={{display:"flex",alignItems:"center",gap:8}}>
+        <button onClick={()=>shiftMonth(-1)} style={{padding:"6px 12px",borderRadius:8,border:"1.5px solid #e5e7eb",background:"#fff",cursor:"pointer",fontSize:14}}>←</button>
+        <span style={{fontSize:15,fontWeight:700,color:"#111827",minWidth:140,textAlign:"center",textTransform:"capitalize"}}>{monthLabel()}</span>
+        <button onClick={()=>shiftMonth(1)}  style={{padding:"6px 12px",borderRadius:8,border:"1.5px solid #e5e7eb",background:"#fff",cursor:"pointer",fontSize:14}}>→</button>
       </div>
     </div>
 
-    <div style={{display:"flex",gap:10,marginBottom:12}}>
-      {[
-        ["Giorni",   filtered.length,        "#111827", false],
-        ["Totale ore", fmtOre(total),         "#2563eb", false],
-        ["Media/giorno", filtered.length ? fmtOre(Math.round(total/filtered.length*10)/10) : "—", "#059669", false],
-      ].map(([label,val,color]) => (
-        <div key={label} className="card" style={{padding:"12px 18px",flex:1,textAlign:"center"}}>
-          <div style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:".5px",marginBottom:4}}>{label}</div>
-          <div style={{fontSize:26,fontWeight:800,color,fontVariantNumeric:"tabular-nums"}}>{val}</div>
-        </div>
-      ))}
-    </div>
-
-    <div className="card" style={{padding:14,marginBottom:12}}>
-      <div style={{fontSize:12,fontWeight:700,color:"#6b7280",marginBottom:10,textTransform:"uppercase",letterSpacing:".4px"}}>Aggiungi giorno</div>
-      <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"flex-end"}}>
-        <div><label style={lbl}>DATA</label><input type="date" value={form.data} onChange={e=>setForm(f=>({...f,data:e.target.value}))} style={inp}/></div>
-        <div>
-          <label style={lbl}>ORE LAVORATE</label>
-          <input type="number" min="0" max="24" step="0.5" placeholder="es. 8 o 7.5"
-            value={form.ore} onChange={e=>setForm(f=>({...f,ore:e.target.value}))}
-            onKeyDown={e=>e.key==="Enter"&&addEntry()}
-            style={{...inp,width:130}}/>
-        </div>
-        <button onClick={addEntry} disabled={!form.data||!form.ore||!empId}
-          style={{padding:"9px 20px",borderRadius:8,border:"none",background:"#2563eb",color:"#fff",fontFamily:"Inter,sans-serif",fontSize:14,fontWeight:700,cursor:"pointer",opacity:(!form.data||!form.ore||!empId)?0.45:1}}>
-          + Aggiungi
-        </button>
-      </div>
-    </div>
-
-    <div className="table-wrap">
-      {filtered.length === 0 ? (
-        <div style={{padding:"36px",textAlign:"center",color:"#9ca3af"}}>
-          <div style={{fontSize:32,marginBottom:8}}>📋</div>
-          <div style={{fontWeight:600,fontSize:14}}>Nessun orario inserito per questo periodo</div>
-        </div>
-      ) : (
-        <table>
-          <thead>
-            <tr>
-              {["Data","Giorno","Ore",""].map(h => (
-                <th key={h} style={{textAlign:h==="Ore"?"center":h===""?"right":"left",padding:"10px 16px",fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:".4px",borderBottom:"1px solid #f3f4f6"}}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map(e => {
-              const d = new Date(e.data + "T00:00:00");
-              const isEditing = editing?.id === e.id;
-              return (
-                <tr key={e.id} style={{borderBottom:"1px solid #f9fafb"}}>
-                  <td style={{padding:"10px 16px",fontVariantNumeric:"tabular-nums",fontWeight:600,color:"#111827"}}>
-                    {d.toLocaleDateString("it-IT",{day:"2-digit",month:"2-digit",year:"numeric"})}
-                  </td>
-                  <td style={{padding:"10px 16px",color:"#6b7280",fontSize:13,textTransform:"capitalize"}}>
-                    {d.toLocaleDateString("it-IT",{weekday:"long"})}
-                  </td>
-                  <td style={{padding:"10px 16px",textAlign:"center"}}>
-                    {isEditing ? (
-                      <input type="number" min="0" max="24" step="0.5" value={editing.ore}
-                        onChange={ev=>setEditing(ed=>({...ed,ore:ev.target.value}))}
-                        onKeyDown={ev=>{if(ev.key==="Enter")commitEdit();if(ev.key==="Escape")setEditing(null);}}
-                        autoFocus
-                        style={{width:70,padding:"4px 8px",borderRadius:6,border:"1.5px solid #2563eb",textAlign:"center",fontFamily:"Inter,sans-serif",fontSize:14,fontWeight:700}}/>
-                    ) : (
-                      <span style={{fontWeight:700,color:"#2563eb",fontSize:15,fontVariantNumeric:"tabular-nums"}}>{fmtOre(e.ore)}</span>
-                    )}
-                  </td>
-                  <td style={{padding:"10px 16px",textAlign:"right"}}>
-                    <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
-                      {isEditing ? (
-                        <>
-                          <button onClick={commitEdit} style={{padding:"4px 10px",borderRadius:6,border:"none",background:"#dcfce7",color:"#16a34a",fontWeight:700,fontSize:12,cursor:"pointer"}}>✓</button>
-                          <button onClick={()=>setEditing(null)} style={{padding:"4px 10px",borderRadius:6,border:"none",background:"#f3f4f6",color:"#6b7280",fontWeight:700,fontSize:12,cursor:"pointer"}}>✕</button>
-                        </>
-                      ) : (
-                        <>
-                          <button onClick={()=>setEditing({id:e.id,ore:String(e.ore)})} style={{padding:"4px 10px",borderRadius:6,border:"none",background:"#eff6ff",color:"#2563eb",fontWeight:700,fontSize:12,cursor:"pointer"}}>✏️</button>
-                          <button onClick={()=>deleteEntry(e.id)} style={{padding:"4px 10px",borderRadius:6,border:"none",background:"#fef2f2",color:"#dc2626",fontWeight:700,fontSize:12,cursor:"pointer"}}>🗑️</button>
-                        </>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
+    <div style={{overflowX:"auto"}}>
+      <table style={{width:"100%",borderCollapse:"collapse",background:"#fff",borderRadius:12,overflow:"hidden",boxShadow:"0 1px 3px rgba(0,0,0,.06)"}}>
+        <thead>
+          <tr style={{background:"#f9fafb"}}>
+            <th style={{...th,textAlign:"left",paddingLeft:14}}>Dipendente</th>
+            <th style={th}>Giorno</th>
+            <th style={{...th,background:"#eff6ff"}}>Da</th>
+            <th style={{...th,background:"#eff6ff"}}>A</th>
+            <th style={{...th,background:"#dbeafe",color:"#1d4ed8"}}>Tot</th>
+            <th style={{...th,background:"#f0fdf4"}}>Da</th>
+            <th style={{...th,background:"#f0fdf4"}}>A</th>
+            <th style={{...th,background:"#dcfce7",color:"#15803d"}}>Tot</th>
+            <th style={{...th,background:"#fef9c3",color:"#854d0e"}}>Gran Tot</th>
+            <th style={th}/>
+          </tr>
+          {/* riga nuova voce */}
+          <tr style={{background:"#f3f4f6"}}>
+            <td style={{...td,textAlign:"left",paddingLeft:14}}>
+              <select value={newRow.empId} onChange={e=>setNewRow(r=>({...r,empId:e.target.value}))}
+                style={{padding:"4px 6px",borderRadius:6,border:"1.5px solid #e5e7eb",fontFamily:"Inter,sans-serif",fontSize:13,maxWidth:150}}>
+                {employees.map(e=><option key={e.id} value={e.id}>{e.avatar} {e.name}</option>)}
+              </select>
+            </td>
+            <td style={td}>
+              <input type="date" value={newRow.data} onChange={e=>setNewRow(r=>({...r,data:e.target.value}))}
+                style={{padding:"4px 6px",borderRadius:6,border:"1.5px solid #e5e7eb",fontFamily:"Inter,sans-serif",fontSize:13}}/>
+            </td>
+            <td style={{...td,background:"#eff6ff"}}>{timeInp(newRow.d1, v=>setNewRow(r=>({...r,d1:v})))}</td>
+            <td style={{...td,background:"#eff6ff"}}>{timeInp(newRow.a1, v=>setNewRow(r=>({...r,a1:v})))}</td>
+            <td style={{...td,background:"#dbeafe",fontWeight:700,color:"#1d4ed8"}}>{fmtMin(calcMinutes(newRow.d1,newRow.a1))}</td>
+            <td style={{...td,background:"#f0fdf4"}}>{timeInp(newRow.d2, v=>setNewRow(r=>({...r,d2:v})))}</td>
+            <td style={{...td,background:"#f0fdf4"}}>{timeInp(newRow.a2, v=>setNewRow(r=>({...r,a2:v})))}</td>
+            <td style={{...td,background:"#dcfce7",fontWeight:700,color:"#15803d"}}>{fmtMin(calcMinutes(newRow.d2,newRow.a2))}</td>
+            <td style={{...td,background:"#fef9c3",fontWeight:800,color:"#854d0e"}}>{fmtMin(calcMinutes(newRow.d1,newRow.a1)+calcMinutes(newRow.d2,newRow.a2))}</td>
+            <td style={td}>
+              <button onClick={addRow} style={{padding:"5px 12px",borderRadius:6,border:"none",background:"#2563eb",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer"}}>+ Aggiungi</button>
+            </td>
+          </tr>
+        </thead>
+        <tbody>
+          {filtered.length === 0 ? (
+            <tr><td colSpan={10} style={{padding:"36px",textAlign:"center",color:"#9ca3af",fontSize:14}}>Nessuna voce per {monthLabel()}</td></tr>
+          ) : filtered.map(r => {
+            const emp = employees.find(e=>e.id===r.empId);
+            const d = new Date(r.data+"T00:00:00");
+            const giorno = d.toLocaleDateString("it-IT",{weekday:"short",day:"2-digit",month:"2-digit"});
+            const t1 = calcMinutes(r.d1,r.a1), t2 = calcMinutes(r.d2,r.a2);
+            return (
+              <tr key={r.id} style={{borderBottom:"1px solid #f3f4f6"}}>
+                <td style={{...td,textAlign:"left",paddingLeft:14,fontWeight:600,color:"#111827"}}>
+                  {emp?.avatar} {emp?.name ?? "—"}
+                </td>
+                <td style={{...td,color:"#6b7280",fontSize:13,textTransform:"capitalize"}}>{giorno}</td>
+                <td style={{...td,background:"#f8fbff"}}>{timeInp(r.d1, v=>updateRow(r.id,"d1",v))}</td>
+                <td style={{...td,background:"#f8fbff"}}>{timeInp(r.a1, v=>updateRow(r.id,"a1",v))}</td>
+                <td style={{...td,background:"#eff6ff",fontWeight:700,color:"#1d4ed8",fontVariantNumeric:"tabular-nums"}}>{fmtMin(t1)}</td>
+                <td style={{...td,background:"#f7fdf7"}}>{timeInp(r.d2, v=>updateRow(r.id,"d2",v))}</td>
+                <td style={{...td,background:"#f7fdf7"}}>{timeInp(r.a2, v=>updateRow(r.id,"a2",v))}</td>
+                <td style={{...td,background:"#f0fdf4",fontWeight:700,color:"#15803d",fontVariantNumeric:"tabular-nums"}}>{fmtMin(t2)}</td>
+                <td style={{...td,background:"#fefce8",fontWeight:800,color:"#854d0e",fontVariantNumeric:"tabular-nums"}}>{fmtMin(t1+t2)}</td>
+                <td style={td}>
+                  <button onClick={()=>deleteRow(r.id)} style={{padding:"4px 8px",borderRadius:6,border:"none",background:"#fef2f2",color:"#dc2626",fontWeight:700,fontSize:12,cursor:"pointer"}}>✕</button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+        {filtered.length > 0 && (
           <tfoot>
-            <tr>
-              <td colSpan={2} style={{padding:"10px 16px",fontWeight:700,color:"#111827",borderTop:"2px solid #e5e7eb"}}>Totale</td>
-              <td style={{padding:"10px 16px",textAlign:"center",fontWeight:800,color:"#2563eb",fontSize:16,borderTop:"2px solid #e5e7eb",fontVariantNumeric:"tabular-nums"}}>{fmtOre(total)}</td>
+            <tr style={{background:"#f9fafb"}}>
+              <td colSpan={8} style={{padding:"10px 14px",fontWeight:700,color:"#111827",borderTop:"2px solid #e5e7eb",textAlign:"right"}}>Totale mese</td>
+              <td style={{padding:"10px 6px",textAlign:"center",fontWeight:800,color:"#854d0e",fontSize:15,borderTop:"2px solid #e5e7eb",fontVariantNumeric:"tabular-nums",background:"#fef9c3"}}>{fmtMin(grandTotal)}</td>
               <td style={{borderTop:"2px solid #e5e7eb"}}/>
             </tr>
           </tfoot>
-        </table>
-      )}
+        )}
+      </table>
     </div>
   </>;
 }
