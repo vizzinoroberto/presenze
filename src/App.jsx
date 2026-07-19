@@ -1342,6 +1342,10 @@ td{padding:7px 10px;border-bottom:1px solid #f3f4f6;font-size:12px}
 .r{text-align:right}.t1{color:#1d4ed8;font-weight:600}.t2{color:#15803d;font-weight:600}.tg{color:#854d0e;font-weight:800}
 .tot-row td{font-weight:700;background:#eff6ff;border-top:2px solid #bfdbfe;border-bottom:none;color:#1d4ed8;padding:9px 10px}
 .no-data{color:#aaa;font-style:italic;padding:8px 0;font-size:11px}
+.firma{margin-top:20px;display:flex;gap:48px;align-items:flex-end}
+.firma-box{flex:1}
+.firma-label{font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:28px}
+.firma-line{border-top:1px solid #555;padding-top:4px;font-size:10px;color:#555}
 @media print{body{padding:16px}.emp-section{page-break-inside:avoid}}
 </style></head><body>
 <h1>Orario Manuale</h1>
@@ -1360,7 +1364,12 @@ ${eRows.map(r=>{
   return `<tr><td>${giorno}</td><td>${r.d1||"—"}</td><td>${r.a1||"—"}</td><td class="r t1">${fmtMin(t1)}</td><td>${r.d2||"—"}</td><td>${r.a2||"—"}</td><td class="r t2">${fmtMin(t2)}</td><td class="r tg">${fmtMin(t1+t2)}</td></tr>`;
 }).join("")}
 <tr class="tot-row"><td colspan="7">Totale ${name}</td><td class="r">${fmtMin(total)}</td></tr>
-</tbody></table></div>`;
+</tbody></table>
+<div class="firma">
+  <div class="firma-box"><div class="firma-label">Firma del dipendente per conferma ore lavorate</div><div class="firma-line">${name}</div></div>
+  <div class="firma-box"><div class="firma-label">Data e firma del responsabile</div><div class="firma-line">&nbsp;</div></div>
+</div>
+</div>`;
   }).join("")}
 </body></html>`;
 
