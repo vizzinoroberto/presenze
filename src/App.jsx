@@ -1241,6 +1241,11 @@ function AdminOrarioManuale({ employees }) {
   const [loadingRows, setLoadingRows] = useState(true);
   const [month, setMonth] = useState(() => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; });
   const [filterEmpId, setFilterEmpId] = useState("");
+  const [filterDate, setFilterDate] = useState("");
+  const [showPdf, setShowPdf] = useState(false);
+  const [pdfFrom, setPdfFrom] = useState(() => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-01`; });
+  const [pdfTo, setPdfTo] = useState(() => new Date().toISOString().split("T")[0]);
+  const [pdfEmpId, setPdfEmpId] = useState("");
   const [newRow, setNewRow] = useState({ empId: "", data: new Date().toISOString().split("T")[0], d1:"", a1:"", d2:"", a2:"" });
 
   useEffect(() => { if (!newRow.empId && employees.length>0) setNewRow(r=>({...r, empId: String(employees[0].id)})); }, [employees]);
@@ -1284,10 +1289,86 @@ function AdminOrarioManuale({ employees }) {
   const monthLabel = () => { const [y,m]=month.split("-"); return new Date(y,m-1,1).toLocaleDateString("it-IT",{month:"long",year:"numeric"}); };
 
   const filtered = rows
-    .filter(r => r.data.startsWith(month))
+    .filter(r => filterDate ? r.data === filterDate : r.data.startsWith(month))
     .filter(r => !filterEmpId || String(r.empId) === filterEmpId)
     .sort((a,b) => a.data.localeCompare(b.data));
   const filteredTotal = filtered.reduce((s,r)=>s+calcMin(r.d1,r.a1)+calcMin(r.d2,r.a2),0);
+
+  // Totali per dipendente quando si filtra per giorno specifico senza filtro emp
+  const dayEmpTotals = (filterDate && !filterEmpId) ? (() => {
+    const map = {};
+    filtered.forEach(r => {
+      const key = String(r.empId);
+      const name = r.empName || employees.find(e=>String(e.id)===key)?.name || "—";
+      if (!map[key]) map[key] = { name, total: 0 };
+      map[key].total += calcMin(r.d1,r.a1) + calcMin(r.d2,r.a2);
+    });
+    return Object.values(map).filter(x => x.total > 0);
+  })() : null;
+
+  const generatePdf = () => {
+    if (!pdfFrom || !pdfTo) return;
+    const fromD = new Date(pdfFrom); fromD.setHours(0,0,0,0);
+    const toD   = new Date(pdfTo);   toD.setHours(23,59,59,999);
+
+    const sourceRows = rows.filter(r => {
+      const d = new Date(r.data+"T00:00:00");
+      if (d < fromD || d > toD) return false;
+      if (pdfEmpId && String(r.empId) !== pdfEmpId) return false;
+      return true;
+    }).sort((a,b) => a.data.localeCompare(b.data) || String(a.empId).localeCompare(String(b.empId)));
+
+    const empMap = {};
+    sourceRows.forEach(r => {
+      const key = String(r.empId);
+      if (!empMap[key]) empMap[key] = { name: r.empName || employees.find(e=>String(e.id)===key)?.name || "—", rows: [] };
+      empMap[key].rows.push(r);
+    });
+
+    const fromFmt = new Date(pdfFrom).toLocaleDateString("it-IT",{day:"2-digit",month:"long",year:"numeric"});
+    const toFmt   = new Date(pdfTo).toLocaleDateString("it-IT",{day:"2-digit",month:"long",year:"numeric"});
+    const empLabel = pdfEmpId ? ` · ${employees.find(e=>String(e.id)===pdfEmpId)?.name||""}` : "";
+
+    const html = `<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8"/><title>Orario Manuale</title><style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#111;padding:28px 32px}
+h1{font-size:22px;font-weight:800;color:#1d4ed8;margin-bottom:4px}
+.period{font-size:13px;color:#555;margin-bottom:28px}
+.emp-section{margin-bottom:32px;page-break-inside:avoid}
+.emp-name{font-size:15px;font-weight:700;color:#1e40af;padding-bottom:6px;border-bottom:2px solid #2563eb;margin-bottom:8px}
+table{width:100%;border-collapse:collapse}
+th{background:#f3f4f6;padding:7px 10px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#666;border-bottom:2px solid #e5e7eb}
+td{padding:7px 10px;border-bottom:1px solid #f3f4f6;font-size:12px}
+.r{text-align:right}.t1{color:#1d4ed8;font-weight:600}.t2{color:#15803d;font-weight:600}.tg{color:#854d0e;font-weight:800}
+.tot-row td{font-weight:700;background:#eff6ff;border-top:2px solid #bfdbfe;border-bottom:none;color:#1d4ed8;padding:9px 10px}
+.no-data{color:#aaa;font-style:italic;padding:8px 0;font-size:11px}
+@media print{body{padding:16px}.emp-section{page-break-inside:avoid}}
+</style></head><body>
+<h1>Orario Manuale</h1>
+<div class="period">Periodo: <strong>${fromFmt}</strong> — <strong>${toFmt}</strong>${empLabel}</div>
+${Object.values(empMap).length === 0
+  ? '<div class="no-data">Nessuna voce nel periodo selezionato</div>'
+  : Object.values(empMap).map(({name, rows: eRows}) => {
+    const total = eRows.reduce((s,r)=>s+calcMin(r.d1,r.a1)+calcMin(r.d2,r.a2),0);
+    return `<div class="emp-section">
+<div class="emp-name">${name}</div>
+<table><thead><tr><th>Giorno</th><th>T1 Da</th><th>T1 A</th><th class="r">T1</th><th>T2 Da</th><th>T2 A</th><th class="r">T2</th><th class="r">Totale</th></tr></thead><tbody>
+${eRows.map(r=>{
+  const d=new Date(r.data+"T00:00:00");
+  const giorno=d.toLocaleDateString("it-IT",{weekday:"short",day:"2-digit",month:"2-digit",year:"numeric"});
+  const t1=calcMin(r.d1,r.a1),t2=calcMin(r.d2,r.a2);
+  return `<tr><td>${giorno}</td><td>${r.d1||"—"}</td><td>${r.a1||"—"}</td><td class="r t1">${fmtMin(t1)}</td><td>${r.d2||"—"}</td><td>${r.a2||"—"}</td><td class="r t2">${fmtMin(t2)}</td><td class="r tg">${fmtMin(t1+t2)}</td></tr>`;
+}).join("")}
+<tr class="tot-row"><td colspan="7">Totale ${name}</td><td class="r">${fmtMin(total)}</td></tr>
+</tbody></table></div>`;
+  }).join("")}
+</body></html>`;
+
+    const win = window.open("","_blank");
+    win.document.write(html);
+    win.document.close();
+    setTimeout(()=>win.print(), 250);
+  };
 
   // stili compatti
   const th = {padding:"7px 4px",fontSize:10,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:".3px",borderBottom:"2px solid #e5e7eb",textAlign:"center",whiteSpace:"nowrap"};
@@ -1304,14 +1385,72 @@ function AdminOrarioManuale({ employees }) {
           <option value="">Tutti i dipendenti</option>
           {employees.map(e=><option key={e.id} value={String(e.id)}>{e.name}</option>)}
         </select>
-        {/* navigazione mese */}
-        <div style={{display:"flex",alignItems:"center",gap:6}}>
+        {/* filtro giorno specifico */}
+        <div style={{display:"flex",alignItems:"center",gap:4}}>
+          <span style={{fontSize:12,fontWeight:600,color:"#6b7280"}}>Giorno:</span>
+          <input type="date" value={filterDate} onChange={e=>setFilterDate(e.target.value)}
+            style={{padding:"4px 8px",borderRadius:7,border:`1.5px solid ${filterDate?"#2563eb":"#e5e7eb"}`,fontFamily:"Inter,sans-serif",fontSize:12,background:filterDate?"#eff6ff":"#fff"}}/>
+          {filterDate && <button onClick={()=>setFilterDate("")} title="Rimuovi filtro giorno" style={{padding:"3px 7px",borderRadius:5,border:"none",background:"#f3f4f6",cursor:"pointer",fontSize:11,color:"#6b7280"}}>✕</button>}
+        </div>
+        {/* navigazione mese (nascosta se c'è filtro giorno) */}
+        {!filterDate && <div style={{display:"flex",alignItems:"center",gap:6}}>
           <button onClick={()=>shiftMonth(-1)} style={{padding:"5px 10px",borderRadius:7,border:"1.5px solid #e5e7eb",background:"#fff",cursor:"pointer",fontSize:13}}>←</button>
           <span style={{fontSize:14,fontWeight:700,color:"#111827",minWidth:130,textAlign:"center",textTransform:"capitalize"}}>{monthLabel()}</span>
           <button onClick={()=>shiftMonth(1)}  style={{padding:"5px 10px",borderRadius:7,border:"1.5px solid #e5e7eb",background:"#fff",cursor:"pointer",fontSize:13}}>→</button>
-        </div>
+        </div>}
+        {/* bottone stampa PDF */}
+        <button onClick={()=>setShowPdf(v=>!v)}
+          style={{padding:"5px 12px",borderRadius:7,border:"1.5px solid #bfdbfe",background:showPdf?"#2563eb":"#eff6ff",color:showPdf?"#fff":"#1d4ed8",fontFamily:"Inter,sans-serif",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+          📄 Stampa PDF
+        </button>
       </div>
     </div>
+
+    {/* PANNELLO PDF */}
+    {showPdf && (
+      <div style={{background:"#f0f6ff",border:"1.5px solid #bfdbfe",borderRadius:12,padding:"14px 18px",marginBottom:14,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+        <span style={{fontSize:12,fontWeight:700,color:"#1e40af",minWidth:80}}>Stampa PDF</span>
+        <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+          <span style={{fontSize:12,color:"#6b7280"}}>Dal</span>
+          <input type="date" value={pdfFrom} onChange={e=>setPdfFrom(e.target.value)}
+            style={{padding:"5px 8px",borderRadius:7,border:"1.5px solid #bfdbfe",fontFamily:"Inter,sans-serif",fontSize:12,background:"#fff"}}/>
+          <span style={{fontSize:12,color:"#6b7280"}}>Al</span>
+          <input type="date" value={pdfTo} onChange={e=>setPdfTo(e.target.value)}
+            style={{padding:"5px 8px",borderRadius:7,border:"1.5px solid #bfdbfe",fontFamily:"Inter,sans-serif",fontSize:12,background:"#fff"}}/>
+        </div>
+        <select value={pdfEmpId} onChange={e=>setPdfEmpId(e.target.value)}
+          style={{padding:"5px 10px",borderRadius:7,border:"1.5px solid #bfdbfe",fontFamily:"Inter,sans-serif",fontSize:12,fontWeight:600,color:"#111827",background:"#fff"}}>
+          <option value="">Tutti i dipendenti</option>
+          {employees.map(e=><option key={e.id} value={String(e.id)}>{e.name}</option>)}
+        </select>
+        <button onClick={generatePdf} disabled={!pdfFrom||!pdfTo}
+          style={{padding:"7px 16px",borderRadius:8,border:"none",background:pdfFrom&&pdfTo?"#2563eb":"#e5e7eb",color:pdfFrom&&pdfTo?"#fff":"#9ca3af",fontFamily:"Inter,sans-serif",fontSize:13,fontWeight:700,cursor:pdfFrom&&pdfTo?"pointer":"default"}}>
+          📄 Genera PDF
+        </button>
+      </div>
+    )}
+
+    {/* RIEPILOGO GIORNO: totali per dipendente quando filterDate è attivo */}
+    {filterDate && dayEmpTotals && (
+      <div style={{background:"#fefce8",border:"1.5px solid #fde68a",borderRadius:10,padding:"12px 16px",marginBottom:12,display:"flex",flexWrap:"wrap",gap:10,alignItems:"center"}}>
+        <span style={{fontSize:12,fontWeight:700,color:"#92400e",marginRight:4,textTransform:"capitalize"}}>
+          {new Date(filterDate+"T00:00:00").toLocaleDateString("it-IT",{weekday:"long",day:"2-digit",month:"long",year:"numeric"})}
+        </span>
+        {dayEmpTotals.length === 0
+          ? <span style={{fontSize:12,color:"#9ca3af",fontStyle:"italic"}}>Nessuna voce per questo giorno</span>
+          : dayEmpTotals.map(x=>(
+            <span key={x.name} style={{fontSize:12,fontWeight:600,color:"#111827",background:"#fff",border:"1px solid #fde68a",borderRadius:6,padding:"3px 10px"}}>
+              {x.name}: <strong style={{color:"#854d0e"}}>{fmtMin(x.total)}</strong>
+            </span>
+          ))
+        }
+        {dayEmpTotals.length > 1 && (
+          <span style={{fontSize:13,fontWeight:800,color:"#854d0e",marginLeft:"auto"}}>
+            Totale giorno: {fmtMin(dayEmpTotals.reduce((s,x)=>s+x.total,0))}
+          </span>
+        )}
+      </div>
+    )}
 
     <div className="table-wrap">
       <table style={{width:"100%",borderCollapse:"collapse",tableLayout:"fixed"}}>
@@ -1361,7 +1500,9 @@ function AdminOrarioManuale({ employees }) {
           {loadingRows ? (
             <tr><td colSpan={10} style={{padding:"32px",textAlign:"center",color:"#9ca3af",fontSize:14}}>Caricamento…</td></tr>
           ) : filtered.length === 0 ? (
-            <tr><td colSpan={10} style={{padding:"32px",textAlign:"center",color:"#9ca3af",fontSize:14}}>Nessuna voce per {monthLabel()}</td></tr>
+            <tr><td colSpan={10} style={{padding:"32px",textAlign:"center",color:"#9ca3af",fontSize:14}}>
+              {filterDate ? `Nessuna voce per il ${new Date(filterDate+"T00:00:00").toLocaleDateString("it-IT",{day:"2-digit",month:"2-digit",year:"numeric"})}` : `Nessuna voce per ${monthLabel()}`}
+            </td></tr>
           ) : filtered.map(r => {
             const empName = r.empName || employees.find(e=>String(e.id)===String(r.empId))?.name || "—";
             const d = new Date(r.data+"T00:00:00");
@@ -1383,11 +1524,13 @@ function AdminOrarioManuale({ employees }) {
             );
           })}
         </tbody>
-        {filtered.length > 0 && filterEmpId && (
+        {filtered.length > 0 && (filterEmpId || filterDate) && (
           <tfoot>
             <tr style={{background:"#f9fafb"}}>
               <td colSpan={8} style={{padding:"10px 14px",fontWeight:700,color:"#111827",borderTop:"2px solid #e5e7eb",textAlign:"right"}}>
-                Totale {employees.find(e=>String(e.id)===filterEmpId)?.name}
+                {filterEmpId
+                  ? `Totale ${employees.find(e=>String(e.id)===filterEmpId)?.name}`
+                  : `Totale giorno`}
               </td>
               <td style={{padding:"10px 6px",textAlign:"center",fontWeight:800,color:"#854d0e",fontSize:15,borderTop:"2px solid #e5e7eb",fontVariantNumeric:"tabular-nums",background:"#fef9c3"}}>{fmtMin(filteredTotal)}</td>
               <td style={{borderTop:"2px solid #e5e7eb"}}/>
