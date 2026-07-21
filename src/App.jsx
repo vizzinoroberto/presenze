@@ -498,16 +498,16 @@ function PinKeypad({ value, onChange, onSubmit, error }) {
   useEffect(() => { if (error) { setShake(true); setTimeout(() => setShake(false), 350); } }, [error]);
   const press = k => {
     if (k === "del") { onChange(value.slice(0,-1)); return; }
-    if (value.length < 4) {
+    if (value.length < 6) {
       const next = value + k;
       onChange(next);
-      if (next.length === 4) setTimeout(() => onSubmit(next), 100);
+      if (next.length === 6) setTimeout(() => onSubmit(next), 100);
     }
   };
   return <>
     <span className="pin-label-txt">Inserisci PIN</span>
     <div className="pin-dots">
-      {[0,1,2,3].map(i=><div key={i} className={`pin-dot ${i<value.length?"filled":""} ${shake?"shake":""}`}/>)}
+      {[0,1,2,3,4,5].map(i=><div key={i} className={`pin-dot ${i<value.length?"filled":""} ${shake?"shake":""}`}/>)}
     </div>
     <div className="keypad">
       {["1","2","3","4","5","6","7","8","9","","0","del"].map((k,i)=>
@@ -1095,7 +1095,7 @@ function EmpModal({ emp, onSave, onClose }) {
         </div>
         <div className="f-row">
           <div className="f-field"><span className="f-lbl">Nome *</span><input className="f-inp" value={f.name} onChange={e=>set("name",e.target.value)} placeholder="Mario Rossi"/></div>
-          <div className="f-field"><span className="f-lbl">PIN 4 cifre *</span><input className="f-inp" value={f.pin} onChange={e=>set("pin",e.target.value.replace(/\D/g,"").slice(0,4))} placeholder="1234" maxLength={4}/></div>
+          <div className="f-field"><span className="f-lbl">PIN 6 cifre *</span><input className="f-inp" value={f.pin} onChange={e=>set("pin",e.target.value.replace(/\D/g,"").slice(0,6))} placeholder="123456" maxLength={6}/></div>
         </div>
         <div className="f-row">
           <div className="f-field"><span className="f-lbl">Ruolo</span>
