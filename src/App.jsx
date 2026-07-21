@@ -19,15 +19,15 @@ async function sbFetch(path, opts={}) {
 
 // ── Dipendenti (pin mai caricato lato client)
 async function dbLoadEmployees() {
-  const data = await sbFetch("dipendenti?select=id,name,role,dept,email,phone,avatar,target,color,in_turni&order=name");
+  const data = await sbFetch("dipendenti?select=id,name,role,dept,email,phone,avatar,target,color,in_turni,in_kiosk&order=name");
   if (!data) return null;
-  return data.map(r => ({ id: r.id, name: r.name, role: r.role||"", dept: r.dept||"", email: r.email||"", phone: r.phone||"", avatar: r.avatar||"👤", target: r.target||8, color: r.color||"#2563eb", in_turni: r.in_turni || false }));
+  return data.map(r => ({ id: r.id, name: r.name, role: r.role||"", dept: r.dept||"", email: r.email||"", phone: r.phone||"", avatar: r.avatar||"👤", target: r.target||8, color: r.color||"#2563eb", in_turni: r.in_turni || false, in_kiosk: r.in_kiosk !== false }));
 }
 async function dbInsertEmployee(emp) {
-  return sbFetch("dipendenti", { method:"POST", headers:{"Prefer":"return=representation"}, body: JSON.stringify({ id:emp.id, name:emp.name, role:emp.role, dept:emp.dept, pin:emp.pin, email:emp.email, phone:emp.phone, avatar:emp.avatar, target:emp.target, color:emp.color, in_turni:emp.in_turni||false }) });
+  return sbFetch("dipendenti", { method:"POST", headers:{"Prefer":"return=representation"}, body: JSON.stringify({ id:emp.id, name:emp.name, role:emp.role, dept:emp.dept, pin:emp.pin, email:emp.email, phone:emp.phone, avatar:emp.avatar, target:emp.target, color:emp.color, in_turni:emp.in_turni||false, in_kiosk:emp.in_kiosk!==false }) });
 }
 async function dbUpdateEmployee(emp) {
-  const body = { name:emp.name, role:emp.role, dept:emp.dept, email:emp.email, phone:emp.phone, avatar:emp.avatar, target:emp.target, color:emp.color, in_turni:emp.in_turni||false };
+  const body = { name:emp.name, role:emp.role, dept:emp.dept, email:emp.email, phone:emp.phone, avatar:emp.avatar, target:emp.target, color:emp.color, in_turni:emp.in_turni||false, in_kiosk:emp.in_kiosk!==false };
   if (emp.pin) body.pin = emp.pin; // invia pin solo se l'admin ne ha inserito uno nuovo
   return sbFetch(`dipendenti?id=eq.${emp.id}`, { method:"PATCH", headers:{"Prefer":"return=representation"}, body: JSON.stringify(body) });
 }
@@ -381,7 +381,7 @@ tr:hover td { background: #f9fafb; }
 
 /* ── EMP CARDS (gestione) ── */
 .emp-cards { display: grid; grid-template-columns: repeat(auto-fill,minmax(260px,1fr)); gap: 10px; }
-.emp-c { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.06),0 0 0 1px rgba(0,0,0,.04); padding: 14px; }
+.emp-c { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.06),0 0 0 1px rgba(0,0,0,.04); padding: 14px; position: relative; }
 .emp-c-top { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .emp-c-av { width: 40px; height: 40px; border-radius: 50%; background: #eff6ff; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; border: 2px solid #bfdbfe; }
 .emp-c-name { font-size: 14px; font-weight: 700; color: #111827; }
@@ -1177,6 +1177,11 @@ function AdminDipendenti({ employees, records, onAdd, onEdit, onDelete }) {
         const todH = calcHours(records.filter(r=>r.empId===emp.id&&r.time>=today0()),emp.id);
         const wkH  = calcHours(records.filter(r=>r.empId===emp.id),emp.id);
         return <div key={emp.id} className="emp-c">
+          <button
+            onClick={()=>onEdit({...emp, in_kiosk: !emp.in_kiosk})}
+            title={emp.in_kiosk ? "Visibile nel kiosk — clicca per nascondere" : "Nascosto nel kiosk — clicca per mostrare"}
+            style={{position:"absolute",top:10,right:10,width:26,height:26,borderRadius:"50%",border:"none",cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",transition:"all .15s",background:emp.in_kiosk?"#16a34a":"#d1d5db",color:"#fff",padding:0,lineHeight:1}}
+          >⏻</button>
           <div className="emp-c-top">
             <div className="emp-c-av" style={{borderColor:emp.color||"#bfdbfe"}}>{emp.avatar}</div>
             <div style={{flex:1}}>
@@ -1906,7 +1911,7 @@ function KioskScreen({ employees, records, onRecord, onAdminLogin }) {
       <div style={{ flex:1,padding:"28px 24px 24px 28px",overflowY:"auto",display:"flex",flexDirection:"column",gap:20 }}>
         <div style={{ fontSize:22,fontWeight:800,color:"#f1f5f9",letterSpacing:"-.3px" }}>Timbrature</div>
         <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(170px,1fr))",gap:16 }}>
-          {[...employees].sort((a,b) => isCheckedIn(records,b.id) - isCheckedIn(records,a.id)).map(emp => {
+          {[...employees].filter(e => e.in_kiosk !== false).sort((a,b) => isCheckedIn(records,b.id) - isCheckedIn(records,a.id)).map(emp => {
             const ci = isCheckedIn(records, emp.id);
             const lastIn = records.filter(r => r.empId===emp.id && r.type==="in" && r.time>=today0()).sort((a,b)=>b.time-a.time)[0];
             return (
