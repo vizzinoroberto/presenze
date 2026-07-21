@@ -925,9 +925,60 @@ function AdminRegistro({ records, employees }) {
   const [rFrom, setRFrom] = useState(() => { const d=new Date(); d.setDate(1); return d.toISOString().split("T")[0]; });
   const [rTo,   setRTo]   = useState(() => new Date().toISOString().split("T")[0]);
 
+  const r30 = t => { const m=t.getMinutes(), h=t.getHours(); if(m<15) return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h,0,0,0); if(m<45) return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h,30,0,0); return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h+1,0,0,0); };
+  const calcMinFromTimes = (da, a) => { if(!da||!a) return 0; return Math.max(0, Math.round((r30(a)-r30(da))/60000)); };
+  const fmtMin = m => { if(!m) return "—"; const h=Math.floor(m/60),min=m%60; return min>0?`${h}h${min.toString().padStart(2,"0")}`:`${h}h`; };
+
+  // Costruisce righe (dipendente × giorno) dalle timbrature
+  const rows = (() => {
+    const fromD = rFrom ? (() => { const d=new Date(rFrom); d.setHours(0,0,0,0); return d; })() : null;
+    const toD   = rTo   ? (() => { const d=new Date(rTo);   d.setHours(23,59,59,999); return d; })() : null;
+
+    const filtered = records.filter(r => {
+      if (empF !== "all" && r.empId !== Number(empF)) return false;
+      if (fromD && r.time < fromD) return false;
+      if (toD   && r.time > toD)   return false;
+      return true;
+    });
+
+    // Raggruppa per empId + data stringa YYYY-MM-DD
+    const map = {};
+    filtered.forEach(r => {
+      const dateStr = r.time.toISOString().split("T")[0];
+      const key = `${r.empId}__${dateStr}`;
+      if (!map[key]) map[key] = { empId: r.empId, dateStr, recs: [] };
+      map[key].recs.push(r);
+    });
+
+    return Object.values(map).map(({ empId, dateStr, recs }) => {
+      const emp = employees.find(e => e.id === empId);
+      recs.sort((a,b) => a.time - b.time);
+      const pairs = [];
+      let lastIn = null;
+      recs.forEach(r => {
+        if (r.type === "in") lastIn = r.time;
+        else if (r.type === "out" && lastIn) { pairs.push({ da: lastIn, a: r.time }); lastIn = null; }
+      });
+      const t1 = pairs[0] || null;
+      const t2 = pairs[1] || null;
+      // Coppie extra (raro): sommate come tempo aggiuntivo al T2
+      const extraMin = pairs.slice(2).reduce((s,p) => s + calcMinFromTimes(p.da, p.a), 0);
+      const min1 = calcMinFromTimes(t1?.da, t1?.a);
+      const min2 = calcMinFromTimes(t2?.da, t2?.a) + extraMin;
+      return { empId, empName: emp?.name || "—", empAvatar: emp?.avatar || "👤", dateStr, t1, t2, min1, min2 };
+    }).sort((a,b) => a.dateStr.localeCompare(b.dateStr) || a.empName.localeCompare(b.empName));
+  })();
+
+  const grandTotal = rows.reduce((s,r) => s+r.min1+r.min2, 0);
+
+  const th = {padding:"7px 4px",fontSize:10,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:".3px",borderBottom:"2px solid #e5e7eb",textAlign:"center",whiteSpace:"nowrap"};
+  const td = {padding:"6px 4px",textAlign:"center",borderBottom:"1px solid #f3f4f6"};
+
   return <>
-    <div style={{fontWeight:800,fontSize:20,color:"#111827",marginBottom:14,letterSpacing:"-.3px"}}>Registro Timbrature</div>
-    <div className="range-bar">
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
+      <div style={{fontWeight:800,fontSize:20,color:"#111827",letterSpacing:"-.3px"}}>Registro Timbrature</div>
+    </div>
+    <div className="range-bar" style={{marginBottom:14}}>
       <select className="fi" value={empF} onChange={e=>setEmpF(e.target.value)}>
         <option value="all">Tutti i dipendenti</option>
         {employees.map(e=><option key={e.id} value={e.id}>{e.avatar} {e.name}</option>)}
@@ -937,7 +988,67 @@ function AdminRegistro({ records, employees }) {
       <span className="range-bar-lbl">Al</span>
       <input type="date" className="fi" value={rTo}   onChange={e=>setRTo(e.target.value)}   style={{flex:"none",width:136}}/>
     </div>
-    <RiepilogoPeriodo records={records} employees={employees} filterEmpId={empF==="all"?null:Number(empF)} from={rFrom} to={rTo}/>
+
+    {rows.length === 0 ? (
+      <div style={{textAlign:"center",padding:"40px 20px",color:"#9ca3af"}}>
+        <div style={{fontSize:36,marginBottom:10}}>📋</div>
+        <div style={{fontWeight:600,fontSize:14}}>Nessuna timbratura nel periodo selezionato</div>
+      </div>
+    ) : (
+      <div className="table-wrap">
+        <table style={{width:"100%",borderCollapse:"collapse",tableLayout:"fixed"}}>
+          <colgroup>
+            <col style={{width:"16%"}}/>
+            <col style={{width:"9%"}}/>
+            <col style={{width:"9%"}}/><col style={{width:"9%"}}/><col style={{width:"7%"}}/>
+            <col style={{width:"9%"}}/><col style={{width:"9%"}}/><col style={{width:"7%"}}/>
+            <col style={{width:"8%"}}/>
+          </colgroup>
+          <thead>
+            <tr style={{background:"#f9fafb"}}>
+              <th style={{...th,textAlign:"left",paddingLeft:10}}>Dipendente</th>
+              <th style={th}>Giorno</th>
+              <th style={{...th,background:"#eff6ff"}}>Da</th>
+              <th style={{...th,background:"#eff6ff"}}>A</th>
+              <th style={{...th,background:"#dbeafe",color:"#1d4ed8"}}>Tot</th>
+              <th style={{...th,background:"#f0fdf4"}}>Da</th>
+              <th style={{...th,background:"#f0fdf4"}}>A</th>
+              <th style={{...th,background:"#dcfce7",color:"#15803d"}}>Tot</th>
+              <th style={{...th,background:"#fef9c3",color:"#854d0e"}}>Gran Tot</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r,i) => {
+              const d = new Date(r.dateStr+"T00:00:00");
+              const giorno = d.toLocaleDateString("it-IT",{weekday:"short",day:"2-digit",month:"2-digit"});
+              return (
+                <tr key={i} style={{borderBottom:"1px solid #f3f4f6"}}>
+                  <td style={{...td,textAlign:"left",paddingLeft:10,fontWeight:600,color:"#111827",fontSize:12,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                    <span style={{marginRight:4}}>{r.empAvatar}</span>{r.empName}
+                  </td>
+                  <td style={{...td,color:"#6b7280",fontSize:11,textTransform:"capitalize"}}>{giorno}</td>
+                  <td style={{...td,background:"#f8fbff",fontSize:12,fontVariantNumeric:"tabular-nums"}}>{r.t1 ? fmtT(r.t1.da) : "—"}</td>
+                  <td style={{...td,background:"#f8fbff",fontSize:12,fontVariantNumeric:"tabular-nums"}}>{r.t1 ? fmtT(r.t1.a)  : "—"}</td>
+                  <td style={{...td,background:"#eff6ff",fontWeight:700,color:"#1d4ed8",fontSize:12,fontVariantNumeric:"tabular-nums"}}>{fmtMin(r.min1)}</td>
+                  <td style={{...td,background:"#f7fdf7",fontSize:12,fontVariantNumeric:"tabular-nums"}}>{r.t2 ? fmtT(r.t2.da) : "—"}</td>
+                  <td style={{...td,background:"#f7fdf7",fontSize:12,fontVariantNumeric:"tabular-nums"}}>{r.t2 ? fmtT(r.t2.a)  : "—"}</td>
+                  <td style={{...td,background:"#f0fdf4",fontWeight:700,color:"#15803d",fontSize:12,fontVariantNumeric:"tabular-nums"}}>{fmtMin(r.min2)}</td>
+                  <td style={{...td,background:"#fefce8",fontWeight:800,color:"#854d0e",fontSize:12,fontVariantNumeric:"tabular-nums"}}>{fmtMin(r.min1+r.min2)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+          <tfoot>
+            <tr style={{background:"#f9fafb"}}>
+              <td colSpan={8} style={{padding:"10px 14px",fontWeight:700,color:"#111827",borderTop:"2px solid #e5e7eb",textAlign:"right"}}>
+                Totale periodo
+              </td>
+              <td style={{padding:"10px 6px",textAlign:"center",fontWeight:800,color:"#854d0e",fontSize:15,borderTop:"2px solid #e5e7eb",fontVariantNumeric:"tabular-nums",background:"#fef9c3"}}>{fmtMin(grandTotal)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    )}
   </>;
 }
 
