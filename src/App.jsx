@@ -668,6 +668,7 @@ function EmployeeScreen({ user, records, onRecord, onLogout, showToast, turni })
   const [now, setNow] = useState(new Date());
   const [regFrom, setRegFrom] = useState(() => { const d=new Date(); d.setDate(1); return d.toISOString().split("T")[0]; });
   const [regTo,   setRegTo  ] = useState(() => new Date().toISOString().split("T")[0]);
+  const [confirmation, setConfirmation] = useState(null); // { type, time }
   useEffect(() => { const i = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(i); }, []);
 
   const todayRecs = records.filter(r => r.empId===user.id && r.time>=today0());
@@ -685,7 +686,11 @@ function EmployeeScreen({ user, records, onRecord, onLogout, showToast, turni })
     const type = checkedIn ? "out" : "in";
     setCheckedIn(prev => !prev);
     const rec = { id: Date.now(), empId: user.id, type, time: new Date(), location: "Sede principale" };
-    const commit = (finalRec) => { onRecord(finalRec); showToast(type==="in"?"Entrata registrata! 👍":"Uscita registrata! 👋", "ok"); };
+    const commit = (finalRec) => {
+      onRecord(finalRec);
+      setConfirmation({ type, time: finalRec.time });
+      setTimeout(() => { setConfirmation(null); onLogout(); }, 3000);
+    };
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         p => { rec.location = `${p.coords.latitude.toFixed(4)},${p.coords.longitude.toFixed(4)}`; commit(rec); },
@@ -693,6 +698,25 @@ function EmployeeScreen({ user, records, onRecord, onLogout, showToast, turni })
       );
     } else commit(rec);
   };
+
+  if (confirmation) {
+    const isIn = confirmation.type === "in";
+    return (
+      <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:isIn?"#f0fdf4":"#fff1f2",fontFamily:"Inter,sans-serif",gap:20,padding:24}}>
+        <div style={{fontSize:72}}>{isIn ? "✅" : "👋"}</div>
+        <div style={{fontSize:28,fontWeight:800,color:isIn?"#15803d":"#dc2626",textAlign:"center",letterSpacing:"-.5px"}}>
+          {isIn ? "Entrata registrata!" : "Uscita registrata!"}
+        </div>
+        <div style={{fontSize:18,fontWeight:600,color:"#374151"}}>
+          {user.avatar} {user.name}
+        </div>
+        <div style={{fontSize:32,fontWeight:800,color:"#111827",letterSpacing:"-1px",background:"#fff",padding:"12px 28px",borderRadius:16,boxShadow:"0 2px 8px rgba(0,0,0,.08)"}}>
+          {fmtT(confirmation.time)}
+        </div>
+        <div style={{fontSize:13,color:"#9ca3af",marginTop:8}}>Ritorno al login tra pochi secondi…</div>
+      </div>
+    );
+  }
 
   return (
     <div className="tmb-outer">
