@@ -745,8 +745,6 @@ function EmployeeScreen({ user, records, onRecord, onLogout, showToast, turni })
         <div className="tmb-brand"><div className="tmb-brand-dot"/>Presenze</div>
         <div className="tmb-tabs">
           <button className={`tmb-tab ${tab==="home"?"active":""}`} onClick={()=>setTab("home")}>⏱ Timbratura</button>
-          <button className={`tmb-tab ${tab==="registro"?"active":""}`} onClick={()=>setTab("registro")}>📋 Registro</button>
-          {user.in_turni && <button className={`tmb-tab ${tab==="turni"?"active":""}`} onClick={()=>setTab("turni")}>📅 Turni</button>}
         </div>
         <button onClick={onLogout} style={{background:"none",border:"none",fontSize:12,color:"#9ca3af",cursor:"pointer",fontFamily:"Inter,sans-serif",fontWeight:600}}>← Esci</button>
       </div>
@@ -803,19 +801,6 @@ function EmployeeScreen({ user, records, onRecord, onLogout, showToast, turni })
         </div>
       )}
 
-      {tab === "registro" && (
-        <div className="reg-outer">
-          <div className="range-bar">
-            <span className="range-bar-lbl">Dal</span>
-            <input type="date" className="fi" value={regFrom} onChange={e=>setRegFrom(e.target.value)} style={{flex:"none",width:136}}/>
-            <span className="range-bar-lbl">Al</span>
-            <input type="date" className="fi" value={regTo}   onChange={e=>setRegTo(e.target.value)}   style={{flex:"none",width:136}}/>
-          </div>
-          <RiepilogoPeriodo records={records} employees={[]} filterEmpId={user.id} from={regFrom} to={regTo}/>
-        </div>
-      )}
-
-      {tab === "turni" && user.in_turni && <TurniEmployee user={user} turni={turni}/>}
     </div>
   );
 }
