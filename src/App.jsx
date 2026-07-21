@@ -17,17 +17,27 @@ async function sbFetch(path, opts={}) {
   }
 }
 
-// ── Dipendenti
+// ── Dipendenti (pin mai caricato lato client)
 async function dbLoadEmployees() {
-  const data = await sbFetch("dipendenti?select=*&order=name");
+  const data = await sbFetch("dipendenti?select=id,name,role,dept,email,phone,avatar,target,color,in_turni&order=name");
   if (!data) return null;
-  return data.map(r => ({ id: r.id, name: r.name, role: r.role||"", dept: r.dept||"", pin: r.pin, email: r.email||"", phone: r.phone||"", avatar: r.avatar||"👤", target: r.target||8, color: r.color||"#2563eb", in_turni: r.in_turni || false }));
+  return data.map(r => ({ id: r.id, name: r.name, role: r.role||"", dept: r.dept||"", email: r.email||"", phone: r.phone||"", avatar: r.avatar||"👤", target: r.target||8, color: r.color||"#2563eb", in_turni: r.in_turni || false }));
 }
 async function dbInsertEmployee(emp) {
   return sbFetch("dipendenti", { method:"POST", headers:{"Prefer":"return=representation"}, body: JSON.stringify({ id:emp.id, name:emp.name, role:emp.role, dept:emp.dept, pin:emp.pin, email:emp.email, phone:emp.phone, avatar:emp.avatar, target:emp.target, color:emp.color, in_turni:emp.in_turni||false }) });
 }
 async function dbUpdateEmployee(emp) {
-  return sbFetch(`dipendenti?id=eq.${emp.id}`, { method:"PATCH", headers:{"Prefer":"return=representation"}, body: JSON.stringify({ name:emp.name, role:emp.role, dept:emp.dept, pin:emp.pin, email:emp.email, phone:emp.phone, avatar:emp.avatar, target:emp.target, color:emp.color, in_turni:emp.in_turni||false }) });
+  const body = { name:emp.name, role:emp.role, dept:emp.dept, email:emp.email, phone:emp.phone, avatar:emp.avatar, target:emp.target, color:emp.color, in_turni:emp.in_turni||false };
+  if (emp.pin) body.pin = emp.pin; // invia pin solo se l'admin ne ha inserito uno nuovo
+  return sbFetch(`dipendenti?id=eq.${emp.id}`, { method:"PATCH", headers:{"Prefer":"return=representation"}, body: JSON.stringify(body) });
+}
+
+// ── Verifica PIN (server-side via RPC — il PIN non arriva mai al client)
+async function dbVerifyEmployeePin(empId, pin) {
+  return sbFetch("rpc/verify_employee_pin", { method:"POST", body: JSON.stringify({ p_emp_id: empId, p_pin: pin }) });
+}
+async function dbVerifyAdminPin(pin) {
+  return sbFetch("rpc/verify_admin_pin", { method:"POST", body: JSON.stringify({ p_pin: pin }) });
 }
 async function dbDeleteEmployee(id) {
   return sbFetch(`dipendenti?id=eq.${id}`, { method:"DELETE" });
@@ -107,7 +117,6 @@ function shiftLabel(tipo, val) {
 const FONT_IMPORT = `@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');`;
 
 /* ─── INITIAL DATA ───────────────────────────────────────────────────── */
-const ADMIN_PIN = "0886";
 
 const INIT_EMPLOYEES = [
   { id: 1, name: "Marco Rossi",    role: "Sviluppatore Senior", dept: "IT",            pin: "1234", email: "m.rossi@azienda.it",   phone: "333 1234567", avatar: "👨‍💻", target: 8, color: "#2563eb" },
@@ -615,21 +624,29 @@ function RiepilogoPeriodo({ records, employees, filterEmpId, from, to }) {
 
 /* ── LOGIN ── */
 function LoginScreen({ employees, onLogin }) {
-  const [mode, setMode] = useState("emp"); // "emp" | "admin"
-  const [sel,  setSel ] = useState(employees[0]?.id || 1);
-  const [pin,  setPin ] = useState("");
-  const [err,  setErr ] = useState("");
+  const [mode,    setMode   ] = useState("emp");
+  const [sel,     setSel    ] = useState(employees[0]?.id || 1);
+  const [pin,     setPin    ] = useState("");
+  const [err,     setErr    ] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const submit = p => {
-    let matched = null;
-    if (mode === "admin") {
-      if (p === ADMIN_PIN) matched = { id:0, name:"Amministratore", isAdmin:true };
-    } else {
-      const e = employees.find(x => x.id === Number(sel));
-      if (e && p === e.pin) matched = e;
-    }
-    if (matched) { onLogin(matched); setPin(""); setErr(""); }
-    else { setErr("PIN errato"); setTimeout(() => { setPin(""); setErr(""); }, 1100); }
+  const submit = async p => {
+    setLoading(true);
+    try {
+      if (mode === "admin") {
+        const res = await dbVerifyAdminPin(p);
+        if (res?.ok) { onLogin({ id:0, name:"Amministratore", isAdmin:true }); setPin(""); setErr(""); }
+        else { setErr("PIN errato"); setTimeout(() => { setPin(""); setErr(""); }, 1100); }
+      } else {
+        const e = employees.find(x => x.id === Number(sel));
+        if (!e) { setErr("PIN errato"); setTimeout(() => { setPin(""); setErr(""); }, 1100); return; }
+        const res = await dbVerifyEmployeePin(e.id, p);
+        if (res?.ok) {
+          const emp = res.employee ? { ...res.employee, id: Number(res.employee.id) } : e;
+          onLogin(emp); setPin(""); setErr("");
+        } else { setErr("PIN errato"); setTimeout(() => { setPin(""); setErr(""); }, 1100); }
+      }
+    } finally { setLoading(false); }
   };
 
   return (
@@ -655,7 +672,10 @@ function LoginScreen({ employees, onLogin }) {
           <p style={{textAlign:"center",fontSize:13,color:"#6b7280",marginBottom:16,fontWeight:500}}>Accesso riservato alla direzione</p>
         )}
 
-        <PinKeypad value={pin} onChange={p=>{setPin(p);setErr("");}} onSubmit={submit} error={err}/>
+        {loading
+          ? <div style={{textAlign:"center",padding:"32px 0",color:"#6b7280",fontSize:13,fontWeight:600}}>Verifica in corso…</div>
+          : <PinKeypad value={pin} onChange={p=>{setPin(p);setErr("");}} onSubmit={submit} error={err}/>
+        }
       </div>
     </div>
   );
@@ -1095,7 +1115,7 @@ function EmpModal({ emp, onSave, onClose }) {
         </div>
         <div className="f-row">
           <div className="f-field"><span className="f-lbl">Nome *</span><input className="f-inp" value={f.name} onChange={e=>set("name",e.target.value)} placeholder="Mario Rossi"/></div>
-          <div className="f-field"><span className="f-lbl">PIN 6 cifre *</span><input className="f-inp" value={f.pin} onChange={e=>set("pin",e.target.value.replace(/\D/g,"").slice(0,6))} placeholder="123456" maxLength={6}/></div>
+          <div className="f-field"><span className="f-lbl">{isNew?"PIN 6 cifre *":"Nuovo PIN (lascia vuoto per non cambiare)"}</span><input className="f-inp" value={f.pin||""} onChange={e=>set("pin",e.target.value.replace(/\D/g,"").slice(0,6))} placeholder="123456" maxLength={6}/></div>
         </div>
         <div className="f-row">
           <div className="f-field"><span className="f-lbl">Ruolo</span>
