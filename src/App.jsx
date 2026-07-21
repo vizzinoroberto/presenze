@@ -1825,6 +1825,159 @@ function TurniEmployee({ user, turni }) {
   );
 }
 
+/* ── KIOSK SCREEN ── */
+function KioskScreen({ employees, records, onRecord, onAdminLogin }) {
+  const [now, setNow] = useState(new Date());
+  const [pinFor, setPinFor] = useState(null); // employee obj | "admin" | null
+  const [pin, setPin] = useState("");
+  const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [confirmation, setConfirmation] = useState(null); // { emp, type, time }
+
+  useEffect(() => {
+    const i = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(i);
+  }, []);
+
+  const openPin = (target) => { setPinFor(target); setPin(""); setErr(""); };
+  const closePin = () => { setPinFor(null); setPin(""); setErr(""); };
+
+  const submitPin = async (p) => {
+    if (loading) return;
+    setLoading(true);
+    try {
+      if (pinFor === "admin") {
+        const res = await dbVerifyAdminPin(p);
+        if (res?.ok) { onAdminLogin(); }
+        else { setErr("PIN errato"); setTimeout(() => { setPin(""); setErr(""); }, 1100); }
+      } else {
+        const res = await dbVerifyEmployeePin(pinFor.id, p);
+        if (res?.ok) {
+          const type = isCheckedIn(records, pinFor.id) ? "out" : "in";
+          const emp = pinFor;
+          const rec = { id: Date.now(), empId: emp.id, type, time: new Date(), location: "Sede principale" };
+          const commit = (finalRec) => {
+            onRecord(finalRec);
+            closePin();
+            setConfirmation({ emp, type, time: finalRec.time });
+            setTimeout(() => setConfirmation(null), 3000);
+          };
+          if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+              pos => { rec.location = `${pos.coords.latitude.toFixed(4)},${pos.coords.longitude.toFixed(4)}`; commit(rec); },
+              () => commit(rec),
+              { timeout: 4000 }
+            );
+          } else commit(rec);
+        } else {
+          setErr("PIN errato");
+          setTimeout(() => { setPin(""); setErr(""); }, 1100);
+        }
+      }
+    } finally { setLoading(false); }
+  };
+
+  const hh = now.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
+  const ss = String(now.getSeconds()).padStart(2, "0");
+  const dateLabel = now.toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long" });
+
+  if (confirmation) {
+    const isIn = confirmation.type === "in";
+    return (
+      <div style={{ position:"fixed",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:isIn?"#f0fdf4":"#fff1f2",fontFamily:"Inter,sans-serif",gap:20,padding:24,zIndex:200 }}>
+        <div style={{ fontSize:80 }}>{isIn ? "✅" : "👋"}</div>
+        <div style={{ fontSize:32,fontWeight:800,color:isIn?"#15803d":"#dc2626",textAlign:"center",letterSpacing:"-.5px" }}>
+          {isIn ? "Entrata registrata!" : "Uscita registrata!"}
+        </div>
+        <div style={{ fontSize:22,fontWeight:600,color:"#374151" }}>
+          {confirmation.emp.avatar} {confirmation.emp.name}
+        </div>
+        <div style={{ fontSize:40,fontWeight:800,color:"#111827",letterSpacing:"-1px",background:"#fff",padding:"14px 32px",borderRadius:20,boxShadow:"0 2px 8px rgba(0,0,0,.08)" }}>
+          {fmtT(confirmation.time)}
+        </div>
+        <div style={{ fontSize:14,color:"#9ca3af",marginTop:8 }}>Ritorno alla schermata tra pochi secondi…</div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display:"flex",height:"100vh",background:"#0f172a",fontFamily:"Inter,sans-serif",overflow:"hidden" }}>
+      {/* Left: employee grid */}
+      <div style={{ flex:1,padding:"28px 24px 24px 28px",overflowY:"auto",display:"flex",flexDirection:"column",gap:20 }}>
+        <div style={{ fontSize:22,fontWeight:800,color:"#f1f5f9",letterSpacing:"-.3px" }}>Timbrature</div>
+        <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(170px,1fr))",gap:16 }}>
+          {[...employees].sort((a,b) => isCheckedIn(records,b.id) - isCheckedIn(records,a.id)).map(emp => {
+            const ci = isCheckedIn(records, emp.id);
+            const lastIn = records.filter(r => r.empId===emp.id && r.type==="in" && r.time>=today0()).sort((a,b)=>b.time-a.time)[0];
+            return (
+              <button key={emp.id} onClick={() => openPin(emp)} style={{
+                background: ci ? "#052e16" : "#1e293b",
+                border: `2px solid ${ci ? "#16a34a" : "#334155"}`,
+                borderRadius:18,padding:"24px 16px",cursor:"pointer",textAlign:"center",transition:"all .15s",color:"inherit",
+                fontFamily:"Inter,sans-serif",
+              }}>
+                <div style={{ fontSize:44,lineHeight:1 }}>{emp.avatar}</div>
+                <div style={{ color:"#f1f5f9",fontWeight:700,fontSize:15,marginTop:10,lineHeight:1.2 }}>{emp.name}</div>
+                <div style={{ marginTop:10 }}>
+                  {ci ? (
+                    <span style={{ background:"#16a34a",color:"#fff",fontSize:11,fontWeight:700,padding:"4px 12px",borderRadius:20,display:"inline-block" }}>
+                      ● IN {lastIn ? fmtT(lastIn.time) : ""}
+                    </span>
+                  ) : (
+                    <span style={{ background:"#1e3a5f",color:"#94a3b8",fontSize:11,fontWeight:700,padding:"4px 12px",borderRadius:20,display:"inline-block" }}>
+                      ○ FUORI
+                    </span>
+                  )}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Right: clock panel */}
+      <div style={{ width:240,background:"#020617",borderLeft:"1px solid #1e293b",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"32px 20px",gap:8,flexShrink:0 }}>
+        <div style={{ fontSize:64,fontWeight:800,color:"#f1f5f9",letterSpacing:"-3px",lineHeight:1,fontVariantNumeric:"tabular-nums" }}>{hh}</div>
+        <div style={{ fontSize:32,fontWeight:300,color:"#475569",letterSpacing:"2px",lineHeight:1,fontVariantNumeric:"tabular-nums" }}>:{ss}</div>
+        <div style={{ fontSize:12,color:"#64748b",textAlign:"center",textTransform:"capitalize",marginTop:8,lineHeight:1.5 }}>{dateLabel}</div>
+        <div style={{ flex:1 }}/>
+        <button onClick={() => openPin("admin")} style={{ background:"transparent",border:"1.5px solid #334155",color:"#64748b",borderRadius:12,padding:"10px 20px",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"Inter,sans-serif",transition:"all .15s" }}>
+          🔐 Admin
+        </button>
+      </div>
+
+      {/* PIN Modal */}
+      {pinFor && (
+        <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,.75)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100 }}
+          onClick={e => { if (e.target===e.currentTarget) closePin(); }}>
+          <div style={{ background:"#fff",borderRadius:24,padding:"32px 28px",width:340,position:"relative" }}>
+            <button onClick={closePin} style={{ position:"absolute",top:14,right:14,background:"none",border:"none",fontSize:22,cursor:"pointer",color:"#9ca3af",lineHeight:1 }}>✕</button>
+            {pinFor !== "admin" ? (
+              <div style={{ textAlign:"center",marginBottom:20 }}>
+                <div style={{ fontSize:44 }}>{pinFor.avatar}</div>
+                <div style={{ fontWeight:800,fontSize:20,marginTop:8,color:"#111827" }}>{pinFor.name}</div>
+                <div style={{ fontSize:13,fontWeight:700,marginTop:6,letterSpacing:".3px",color:isCheckedIn(records,pinFor.id)?"#dc2626":"#16a34a" }}>
+                  {isCheckedIn(records,pinFor.id) ? "⬇ Timbratura uscita" : "⬆ Timbratura entrata"}
+                </div>
+              </div>
+            ) : (
+              <div style={{ textAlign:"center",marginBottom:20 }}>
+                <div style={{ fontSize:44 }}>🔐</div>
+                <div style={{ fontWeight:800,fontSize:20,marginTop:8,color:"#111827" }}>Accesso Admin</div>
+                <div style={{ fontSize:13,color:"#6b7280",marginTop:4 }}>Riservato alla direzione</div>
+              </div>
+            )}
+            {loading
+              ? <div style={{ textAlign:"center",padding:"32px 0",color:"#6b7280",fontSize:13,fontWeight:600 }}>Verifica in corso…</div>
+              : <PinKeypad value={pin} onChange={p=>{setPin(p);setErr("");}} onSubmit={submitPin} error={err}/>
+            }
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── ADMIN SHELL ── */
 function AdminShell({ employees, records, setRecords, onLogout, onAdd, onEdit, onDelete, turni, onRecord, onUpdateRecord }) {
   const [tab, setTab] = useState("dashboard");
@@ -1937,7 +2090,14 @@ export default function App() {
     <div>
       <style>{css}</style>
 
-      {!user && <LoginScreen employees={employees} onLogin={setUser}/>}
+      {!user?.isAdmin && (
+        <KioskScreen
+          employees={employees}
+          records={records}
+          onRecord={addRecord}
+          onAdminLogin={() => setUser({ id:0, name:"Amministratore", isAdmin:true })}
+        />
+      )}
 
       {user?.isAdmin && (
         <AdminShell
@@ -1945,17 +2105,6 @@ export default function App() {
           onLogout={()=>setUser(null)}
           onAdd={addEmp} onEdit={editEmp} onDelete={deleteEmp}
           turni={turni} onRecord={addRecord} onUpdateRecord={updateRecord}
-        />
-      )}
-
-      {user && !user.isAdmin && (
-        <EmployeeScreen
-          key={user.id}
-          user={user} records={records}
-          onRecord={addRecord}
-          onLogout={()=>setUser(null)}
-          showToast={showToast}
-          turni={turni}
         />
       )}
 
