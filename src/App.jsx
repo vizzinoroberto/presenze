@@ -425,6 +425,7 @@ tr:hover td { background: #f9fafb; }
 .toast.ok  { background: #22c55e; color: #fff; }
 .toast.err { background: #ef4444; color: #fff; }
 @keyframes tIn { from{transform:translateY(8px);opacity:0} to{transform:translateY(0);opacity:1} }
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* ── PRESENCE BAR ── */
 .pres-bar-wrap { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.06),0 0 0 1px rgba(0,0,0,.04); padding: 14px 16px; margin-bottom: 16px; }
@@ -1984,8 +1985,14 @@ function KioskScreen({ employees, records, onRecord, onAdminLogin }) {
 }
 
 /* ── ADMIN SHELL ── */
-function AdminShell({ employees, records, setRecords, onLogout, onAdd, onEdit, onDelete, turni, onRecord, onUpdateRecord }) {
+function AdminShell({ employees, records, setRecords, onLogout, onAdd, onEdit, onDelete, turni, onRecord, onUpdateRecord, onRefresh }) {
   const [tab, setTab] = useState("dashboard");
+  const [refreshing, setRefreshing] = useState(false);
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await onRefresh();
+    setRefreshing(false);
+  };
   return (
     <div className="app">
       <div className="topbar">
@@ -1998,6 +2005,10 @@ function AdminShell({ employees, records, setRecords, onLogout, onAdd, onEdit, o
           </div>
           <div className="topbar-right">
             <LiveClock/>
+            <button onClick={handleRefresh} disabled={refreshing} title="Aggiorna dati"
+              style={{background:"none",border:"1.5px solid #e5e7eb",borderRadius:8,padding:"5px 9px",cursor:"pointer",fontSize:15,lineHeight:1,color:"#6b7280",transition:"all .2s",display:"flex",alignItems:"center",opacity:refreshing?.5:1}}>
+              <span style={{display:"inline-block",animation:refreshing?"spin .7s linear infinite":"none"}}>↻</span>
+            </button>
             <button className="exit-btn" onClick={onLogout}>← Esci</button>
           </div>
         </div>
@@ -2044,6 +2055,13 @@ export default function App() {
   }, []);
 
   const showToast = (msg, type="ok") => setToast({msg, type, k: Date.now()});
+
+  const refreshData = async () => {
+    const [emps, recs, trn] = await Promise.all([dbLoadEmployees(), dbLoadRecords(), dbLoadTurniEsterni()]);
+    if (emps) setEmployees(emps);
+    if (recs) setRecords(recs);
+    setTurni(trn || {});
+  };
 
   const addRecord = async (rec) => {
     setRecords(p => [rec, ...p]);
@@ -2110,6 +2128,7 @@ export default function App() {
           onLogout={()=>setUser(null)}
           onAdd={addEmp} onEdit={editEmp} onDelete={deleteEmp}
           turni={turni} onRecord={addRecord} onUpdateRecord={updateRecord}
+          onRefresh={refreshData}
         />
       )}
 
