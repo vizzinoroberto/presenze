@@ -1706,16 +1706,63 @@ ${eRows.map(r=>{
   </>;
 }
 
+/* ── TURNI helpers ── */
+const TURNI_ROW_COLORS = ["#dbeafe","#dcfce7","#fef9c3","#fce7f3","#ffedd5","#fef3c7","#e0f2fe","#ede9fe","#d1fae5","#fde8d8"];
+const TURNI_DAY_LETTERS = ["L","M","M","G","V","S","D"];
+
+function fmtDateHdr(d) {
+  const dd=String(d.getDate()).padStart(2,"0"), mm=String(d.getMonth()+1).padStart(2,"0"), yy=String(d.getFullYear()).slice(2);
+  return `${dd}/${mm}/${yy}`;
+}
+
+function TurniCell({ name, d, turni }) {
+  const ds = toDateStr(d);
+  const pVal = turni[`${name}::${ds}::pranzo`] || "";
+  const cVal = turni[`${name}::${ds}::cena`]   || "";
+  const pLabel = shiftLabel("pranzo", pVal);
+  const cLabel = shiftLabel("cena",   cVal);
+  const isSun = d.getDay() === 0, isSat = d.getDay() === 6;
+  const bgCell = isSun ? "rgba(239,68,68,.06)" : isSat ? "rgba(234,179,8,.06)" : "transparent";
+
+  if (!pVal && !cVal) return <td style={{textAlign:"center",padding:"8px 4px",color:"#d1d5db",fontSize:13,background:bgCell}}>·</td>;
+  if (pVal==="F" || cVal==="F") return (
+    <td style={{textAlign:"center",padding:"6px 4px",background:bgCell}}>
+      <span style={{background:"#fee2e2",color:"#dc2626",padding:"2px 8px",borderRadius:5,fontSize:11,fontWeight:700}}>Ferie</span>
+    </td>
+  );
+  return (
+    <td style={{textAlign:"center",padding:"6px 4px",lineHeight:1.25,background:bgCell}}>
+      {pVal && <div style={{fontSize:12,fontWeight:600,color:"#92400e"}}>{pLabel}</div>}
+      {cVal && <div style={{fontSize:13,fontWeight:700,color:"#111827"}}>{cLabel}</div>}
+      {cVal && <div style={{fontSize:10,fontWeight:600,color:"#9ca3af"}}>{cVal}</div>}
+    </td>
+  );
+}
+
+function TurniHeader({ days }) {
+  return (
+    <tr style={{background:"#f9fafb"}}>
+      <th style={{padding:"10px 14px",textAlign:"left",fontWeight:700,fontSize:12,color:"#374151",borderBottom:"2px solid #e5e7eb",minWidth:150,whiteSpace:"nowrap"}}>Dipendente</th>
+      {days.map((d,i) => {
+        const isSun=d.getDay()===0, isSat=d.getDay()===6;
+        return (
+          <th key={i} style={{padding:"6px 2px",textAlign:"center",borderBottom:"2px solid #e5e7eb",minWidth:70,background:isSun?"#fef2f2":isSat?"#fefce8":"#f9fafb"}}>
+            <div style={{writingMode:"vertical-lr",transform:"rotate(180deg)",fontSize:10,color:"#6b7280",fontWeight:600,margin:"0 auto 4px"}}>{fmtDateHdr(d)}</div>
+            <div style={{fontSize:13,fontWeight:800,color:isSun?"#dc2626":isSat?"#b45309":"#374151"}}>{TURNI_DAY_LETTERS[i]}</div>
+          </th>
+        );
+      })}
+    </tr>
+  );
+}
+
 /* ── TURNI ADMIN (sola lettura — gestione su Turni Arcobaleno) ── */
 function TurniAdmin({ employees, turni }) {
   const [weekStart, setWeekStart] = useState(() => getMonday(new Date()));
-
   const turniEmps = employees.filter(e => e.in_turni);
   const days = Array.from({length:7}, (_,i) => { const d=new Date(weekStart); d.setDate(weekStart.getDate()+i); return d; });
-
   const prevWeek = () => { const d=new Date(weekStart); d.setDate(d.getDate()-7); setWeekStart(d); };
   const nextWeek = () => { const d=new Date(weekStart); d.setDate(d.getDate()+7); setWeekStart(d); };
-
   const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate()+6);
   const weekLabel = `${weekStart.toLocaleDateString("it-IT",{day:"2-digit",month:"long"})} – ${weekEnd.toLocaleDateString("it-IT",{day:"2-digit",month:"long",year:"numeric"})}`;
 
@@ -1738,42 +1785,20 @@ function TurniAdmin({ employees, turni }) {
         <div style={{fontWeight:600,fontSize:14}}>Nessun dipendente collegato ai turni.<br/>Attiva "Includi nei Turni" nel pannello Dipendenti e assicurati che il nome corrisponda esattamente a quello su Turni Arcobaleno.</div>
       </div>
     ) : (
-      <div className="card" style={{padding:0,overflow:"hidden"}}>
-        <div className="turni-scroll">
-          <table className="turni-table">
-            <thead>
-              <tr>
-                <th className="emp-col">Dipendente</th>
-                <th style={{minWidth:36,width:36}}>T</th>
-                {days.map(d=><th key={toDateStr(d)} style={{minWidth:68}}>
-                  {d.toLocaleDateString("it-IT",{weekday:"short"}).toUpperCase()} {d.getDate()}
-                </th>)}
-              </tr>
-            </thead>
+      <div style={{background:"#fff",borderRadius:12,boxShadow:"0 1px 3px rgba(0,0,0,.06)",overflow:"hidden"}}>
+        <div style={{overflowX:"auto"}}>
+          <table style={{borderCollapse:"collapse",width:"100%",fontFamily:"Inter,sans-serif"}}>
+            <thead><TurniHeader days={days}/></thead>
             <tbody>
-              {turniEmps.map(emp=>[
-                <tr key={`${emp.id}-p`} className="pranzo-row">
-                  <td className="emp-cell" rowSpan={2} style={{verticalAlign:"middle"}}>{emp.avatar} {emp.name}</td>
-                  <td className="tipo-cell" style={{color:"#854d0e"}}>☀<br/>P</td>
-                  {days.map(d=>{
-                    const ds=toDateStr(d); const val=turni[`${emp.name}::${ds}::pranzo`]||"";
-                    const label=shiftLabel("pranzo",val);
-                    return <td key={ds} style={{textAlign:"center",padding:"5px 3px"}}>
-                      <span className={`turni-badge ${val==="F"?"ferie":val?"turno":"libre"}`}>{label}</span>
-                    </td>;
-                  })}
-                </tr>,
-                <tr key={`${emp.id}-c`} className="cena-row">
-                  <td className="tipo-cell" style={{color:"#1d4ed8"}}>🌙<br/>C</td>
-                  {days.map(d=>{
-                    const ds=toDateStr(d); const val=turni[`${emp.name}::${ds}::cena`]||"";
-                    const label=shiftLabel("cena",val);
-                    return <td key={ds} style={{textAlign:"center",padding:"5px 3px"}}>
-                      <span className={`turni-badge ${val==="F"?"ferie":val?"turno":"libre"}`}>{label}</span>
-                    </td>;
-                  })}
-                </tr>
-              ])}
+              {turniEmps.map((emp,idx) => {
+                const bg = TURNI_ROW_COLORS[idx % TURNI_ROW_COLORS.length];
+                return (
+                  <tr key={emp.id} style={{background:bg}}>
+                    <td style={{padding:"9px 14px",fontWeight:600,fontSize:13,color:"#111827",borderBottom:"1px solid rgba(0,0,0,.05)",whiteSpace:"nowrap"}}>{emp.name}</td>
+                    {days.map((d,i) => <TurniCell key={i} name={emp.name} d={d} turni={turni}/>)}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -1786,10 +1811,8 @@ function TurniAdmin({ employees, turni }) {
 function TurniEmployee({ user, turni }) {
   const [weekStart, setWeekStart] = useState(() => getMonday(new Date()));
   const days = Array.from({length:7}, (_,i) => { const d=new Date(weekStart); d.setDate(weekStart.getDate()+i); return d; });
-
   const prevWeek = () => { const d=new Date(weekStart); d.setDate(d.getDate()-7); setWeekStart(d); };
   const nextWeek = () => { const d=new Date(weekStart); d.setDate(d.getDate()+7); setWeekStart(d); };
-
   const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate()+6);
   const weekLabel = `${weekStart.toLocaleDateString("it-IT",{day:"2-digit",month:"long"})} – ${weekEnd.toLocaleDateString("it-IT",{day:"2-digit",month:"long",year:"numeric"})}`;
 
@@ -1800,37 +1823,14 @@ function TurniEmployee({ user, turni }) {
         <div className="week-label">{weekLabel}</div>
         <button className="week-nav-btn" onClick={nextWeek}>Succ →</button>
       </div>
-      <div className="card" style={{padding:0,overflow:"hidden"}}>
-        <div className="turni-scroll">
-          <table className="turni-table">
-            <thead>
-              <tr>
-                <th style={{minWidth:60,textAlign:"left",paddingLeft:10}}>Turno</th>
-                {days.map(d=><th key={toDateStr(d)} style={{minWidth:68}}>
-                  {d.toLocaleDateString("it-IT",{weekday:"short"}).toUpperCase()} {d.getDate()}
-                </th>)}
-              </tr>
-            </thead>
+      <div style={{background:"#fff",borderRadius:12,boxShadow:"0 1px 3px rgba(0,0,0,.06)",overflow:"hidden"}}>
+        <div style={{overflowX:"auto"}}>
+          <table style={{borderCollapse:"collapse",width:"100%",fontFamily:"Inter,sans-serif"}}>
+            <thead><TurniHeader days={days}/></thead>
             <tbody>
-              <tr className="pranzo-row">
-                <td className="tipo-cell" style={{color:"#854d0e",textAlign:"left",paddingLeft:10}}>☀ Pranzo</td>
-                {days.map(d=>{
-                  const ds=toDateStr(d); const val=turni[`${user.name}::${ds}::pranzo`]||"";
-                  const label=shiftLabel("pranzo",val);
-                  return <td key={ds} style={{textAlign:"center",padding:"6px 3px"}}>
-                    <span className={`turni-badge ${val==="F"?"ferie":val?"turno":"libre"}`}>{label}</span>
-                  </td>;
-                })}
-              </tr>
-              <tr className="cena-row">
-                <td className="tipo-cell" style={{color:"#1d4ed8",textAlign:"left",paddingLeft:10}}>🌙 Cena</td>
-                {days.map(d=>{
-                  const ds=toDateStr(d); const val=turni[`${user.name}::${ds}::cena`]||"";
-                  const label=shiftLabel("cena",val);
-                  return <td key={ds} style={{textAlign:"center",padding:"6px 3px"}}>
-                    <span className={`turni-badge ${val==="F"?"ferie":val?"turno":"libre"}`}>{label}</span>
-                  </td>;
-                })}
+              <tr style={{background:"#dbeafe"}}>
+                <td style={{padding:"9px 14px",fontWeight:700,fontSize:13,color:"#111827",borderBottom:"1px solid rgba(0,0,0,.05)",whiteSpace:"nowrap"}}>{user.avatar} {user.name}</td>
+                {days.map((d,i) => <TurniCell key={i} name={user.name} d={d} turni={turni}/>)}
               </tr>
             </tbody>
           </table>
