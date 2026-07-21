@@ -1832,7 +1832,7 @@ function TurniEmployee({ user, turni }) {
 }
 
 /* ── KIOSK SCREEN ── */
-function KioskScreen({ employees, records, onRecord, onAdminLogin }) {
+function KioskScreen({ employees, records, onRecord, onAdminLogin, onRefresh }) {
   const [now, setNow] = useState(new Date());
   const [pinFor, setPinFor] = useState(null); // employee obj | "admin" | null
   const [pin, setPin] = useState("");
@@ -1844,6 +1844,11 @@ function KioskScreen({ employees, records, onRecord, onAdminLogin }) {
     const i = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(i);
   }, []);
+
+  useEffect(() => {
+    const i = setInterval(() => onRefresh(), 3000);
+    return () => clearInterval(i);
+  }, [onRefresh]);
 
   const openPin = (target) => { setPinFor(target); setPin(""); setErr(""); };
   const closePin = () => { setPinFor(null); setPin(""); setErr(""); };
@@ -2056,12 +2061,12 @@ export default function App() {
 
   const showToast = (msg, type="ok") => setToast({msg, type, k: Date.now()});
 
-  const refreshData = async () => {
+  const refreshData = useCallback(async () => {
     const [emps, recs, trn] = await Promise.all([dbLoadEmployees(), dbLoadRecords(), dbLoadTurniEsterni()]);
     if (emps) setEmployees(emps);
     if (recs) setRecords(recs);
     setTurni(trn || {});
-  };
+  }, []);
 
   const addRecord = async (rec) => {
     setRecords(p => [rec, ...p]);
@@ -2119,6 +2124,7 @@ export default function App() {
           records={records}
           onRecord={addRecord}
           onAdminLogin={() => setUser({ id:0, name:"Amministratore", isAdmin:true })}
+          onRefresh={refreshData}
         />
       )}
 
