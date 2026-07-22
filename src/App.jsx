@@ -19,17 +19,20 @@ async function sbFetch(path, opts={}) {
 
 // ── Dipendenti (pin mai caricato lato client)
 async function dbLoadEmployees() {
-  const data = await sbFetch("dipendenti?select=id,name,role,dept,email,phone,avatar,target,color,in_turni,in_kiosk&order=name");
+  const data = await sbFetch("dipendenti?select=id,name,role,dept,email,phone,avatar,target,color,in_turni,in_kiosk,schedule&order=name");
   if (!data) return null;
-  return data.map(r => ({ id: r.id, name: r.name, role: r.role||"", dept: r.dept||"", email: r.email||"", phone: r.phone||"", avatar: r.avatar||"👤", target: r.target||8, color: r.color||"#2563eb", in_turni: r.in_turni || false, in_kiosk: r.in_kiosk !== false }));
+  return data.map(r => ({ id: r.id, name: r.name, role: r.role||"", dept: r.dept||"", email: r.email||"", phone: r.phone||"", avatar: r.avatar||"👤", target: r.target||8, color: r.color||"#2563eb", in_turni: r.in_turni || false, in_kiosk: r.in_kiosk !== false, schedule: r.schedule||{} }));
 }
 async function dbInsertEmployee(emp) {
-  return sbFetch("dipendenti", { method:"POST", headers:{"Prefer":"return=representation"}, body: JSON.stringify({ id:emp.id, name:emp.name, role:emp.role, dept:emp.dept, pin:emp.pin, email:emp.email, phone:emp.phone, avatar:emp.avatar, target:emp.target, color:emp.color, in_turni:emp.in_turni||false, in_kiosk:emp.in_kiosk!==false }) });
+  return sbFetch("dipendenti", { method:"POST", headers:{"Prefer":"return=representation"}, body: JSON.stringify({ id:emp.id, name:emp.name, role:emp.role, dept:emp.dept, pin:emp.pin, email:emp.email, phone:emp.phone, avatar:emp.avatar, target:emp.target, color:emp.color, in_turni:emp.in_turni||false, in_kiosk:emp.in_kiosk!==false, schedule:emp.schedule||{} }) });
 }
 async function dbUpdateEmployee(emp) {
-  const body = { name:emp.name, role:emp.role, dept:emp.dept, email:emp.email, phone:emp.phone, avatar:emp.avatar, target:emp.target, color:emp.color, in_turni:emp.in_turni||false, in_kiosk:emp.in_kiosk!==false };
-  if (emp.pin) body.pin = emp.pin; // invia pin solo se l'admin ne ha inserito uno nuovo
+  const body = { name:emp.name, role:emp.role, dept:emp.dept, email:emp.email, phone:emp.phone, avatar:emp.avatar, target:emp.target, color:emp.color, in_turni:emp.in_turni||false, in_kiosk:emp.in_kiosk!==false, schedule:emp.schedule||{} };
+  if (emp.pin) body.pin = emp.pin;
   return sbFetch(`dipendenti?id=eq.${emp.id}`, { method:"PATCH", headers:{"Prefer":"return=representation"}, body: JSON.stringify(body) });
+}
+async function dbDeleteOreContratto(empId, mese) {
+  return sbFetch(`ore_contratto?emp_id=eq.${empId}&mese=eq.${mese}`, { method:"DELETE" });
 }
 
 // ── Verifica PIN (server-side via RPC — il PIN non arriva mai al client)
@@ -1144,10 +1147,18 @@ function AdminRegistro({ records, employees, onDeleteRecord, onUpdateRecord }) {
 }
 
 /* ── EMPLOYEE MODAL ── */
+const WEEK_DAYS = [{key:1,label:"Lun"},{key:2,label:"Mar"},{key:3,label:"Mer"},{key:4,label:"Gio"},{key:5,label:"Ven"},{key:6,label:"Sab"},{key:0,label:"Dom"}];
+
 function EmpModal({ emp, onSave, onClose }) {
   const isNew = !emp;
-  const [f, setF] = useState(emp?{...emp}:{name:"",role:"",dept:"",pin:"",email:"",phone:"",avatar:"👤",target:8,color:"#2563eb",in_turni:false});
+  const [f, setF] = useState(emp?{...emp, schedule:emp.schedule||{}}:{name:"",role:"",dept:"",pin:"",email:"",phone:"",avatar:"👤",target:8,color:"#2563eb",in_turni:false,schedule:{}});
   const set = (k,v) => setF(x=>({...x,[k]:v}));
+  const setScheduleDay = (day, val) => {
+    const s = {...(f.schedule||{})};
+    const v = parseFloat(val);
+    if (v > 0) s[day] = v; else delete s[day];
+    set("schedule", s);
+  };
   const save = () => { if(!f.name.trim()||!f.pin.trim()) return; onSave(isNew?{...f,id:Date.now()}:f); };
 
   return (
@@ -1191,6 +1202,23 @@ function EmpModal({ emp, onSave, onClose }) {
               <div style={{fontSize:11,color:"#9ca3af"}}>Il dipendente apparirà nella griglia turni</div>
             </div>
           </label>
+        </div>
+        <div className="f-field" style={{marginTop:4}}>
+          <span className="f-lbl">Ore da contratto / giorno della settimana</span>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:6,marginTop:4}}>
+            {WEEK_DAYS.map(({key,label})=>(
+              <div key={key} style={{textAlign:"center"}}>
+                <div style={{fontSize:10,fontWeight:700,color: key===0||key===6 ? "#dc2626" : "#6b7280",marginBottom:4,letterSpacing:".3px"}}>{label}</div>
+                <input type="number" min="0" max="24" step="0.5"
+                  value={f.schedule?.[key]||""}
+                  onChange={e=>setScheduleDay(key, e.target.value)}
+                  placeholder="0"
+                  style={{width:"100%",padding:"5px 2px",textAlign:"center",border:"1.5px solid #e5e7eb",borderRadius:6,fontSize:12,fontFamily:"Inter,sans-serif",color:"#111827"}}
+                />
+              </div>
+            ))}
+          </div>
+          <div style={{fontSize:10,color:"#9ca3af",marginTop:5}}>Lascia 0 per i giorni di riposo. Usato per calcolare automaticamente le ore mensili nel tab Contratto.</div>
         </div>
         <div className="modal-btns">
           <button className="m-btn cx" onClick={onClose}>Annulla</button>
@@ -2221,6 +2249,18 @@ function AdminContratto({ employees, records }) {
     return Math.round(Math.max(0,total)*2)/2;
   };
 
+  const calcScheduleHours = (schedule, mese) => {
+    if (!schedule || Object.keys(schedule).length === 0) return null;
+    const [y, m] = mese.split("-").map(Number);
+    const daysInMonth = new Date(y, m, 0).getDate();
+    let total = 0;
+    for (let day = 1; day <= daysInMonth; day++) {
+      const wd = new Date(y, m-1, day).getDay();
+      total += Number(schedule[wd]) || 0;
+    }
+    return Math.round(total * 2) / 2;
+  };
+
   const saveOre = async (empId, val) => {
     const ore = parseFloat(String(val).replace(",",".")) || 0;
     setContratto(p => ({...p, [empId]: ore}));
@@ -2232,6 +2272,11 @@ function AdminContratto({ employees, records }) {
     });
   };
 
+  const resetToAuto = async (empId) => {
+    setContratto(p => { const n={...p}; delete n[empId]; return n; });
+    await dbDeleteOreContratto(empId, mese);
+  };
+
   const meseLabel = new Date(mese+"-15").toLocaleDateString("it-IT",{month:"long",year:"numeric"});
   const prevMese = () => { const [y,m]=mese.split("-").map(Number); const d=new Date(y,m-2,1); setMese(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`); };
   const nextMese = () => { const [y,m]=mese.split("-").map(Number); const d=new Date(y,m,  1); setMese(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`); };
@@ -2241,12 +2286,14 @@ function AdminContratto({ employees, records }) {
 
   let totContratto=0, totLavorato=0;
   const rows = employees.map(emp => {
-    const ore   = contratto[emp.id] || 0;
-    const lav   = workedHours(emp.id);
-    const diff  = Math.round((lav - ore)*2)/2;
-    totContratto += ore;
-    totLavorato  += lav;
-    return { emp, ore, lav, diff };
+    const autoOre    = calcScheduleHours(emp.schedule, mese);
+    const hasManual  = contratto[emp.id] !== undefined;
+    const ore        = hasManual ? contratto[emp.id] : (autoOre ?? 0);
+    const lav        = workedHours(emp.id);
+    const diff       = Math.round((lav - ore)*2)/2;
+    totContratto    += ore;
+    totLavorato     += lav;
+    return { emp, ore, lav, diff, autoOre, hasManual };
   });
   const totDiff = Math.round((totLavorato - totContratto)*2)/2;
 
@@ -2281,7 +2328,7 @@ function AdminContratto({ employees, records }) {
                   {emp.role && <span style={{fontSize:11,color:"#9ca3af",marginLeft:6}}>{emp.role}</span>}
                 </td>
 
-                {/* Ore contratto — cella inline editabile */}
+                {/* Ore contratto — auto da schedule o override manuale */}
                 <td style={{padding:"8px",textAlign:"center",background:"#f8fbff"}}>
                   {editing[emp.id] !== undefined ? (
                     <input
@@ -2294,11 +2341,24 @@ function AdminContratto({ employees, records }) {
                       style={{width:70,padding:"4px 6px",borderRadius:6,border:"1.5px solid #2563eb",textAlign:"center",fontSize:13,fontFamily:"Inter,sans-serif",fontVariantNumeric:"tabular-nums"}}
                     />
                   ) : (
-                    <span
-                      onClick={() => setEditing(p=>({...p,[emp.id]: ore||""}))}
-                      title="Clicca per modificare"
-                      style={{cursor:"pointer",fontSize:13,fontWeight:700,color:"#1d4ed8",fontVariantNumeric:"tabular-nums",padding:"4px 10px",borderRadius:6,border:"1.5px dashed #bfdbfe",display:"inline-block",minWidth:50}}
-                    >{ore > 0 ? `${ore}h` : <span style={{color:"#d1d5db"}}>—</span>}</span>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:4}}>
+                      <span
+                        onClick={() => setEditing(p=>({...p,[emp.id]: ore||""}))}
+                        title={hasManual ? "Override manuale — clicca per modificare" : autoOre!=null ? "Calcolato da contratto settimanale — clicca per sovrascrivere" : "Clicca per inserire"}
+                        style={{cursor:"pointer",fontSize:13,fontWeight:700,color:"#1d4ed8",fontVariantNumeric:"tabular-nums",padding:"3px 8px",borderRadius:6,
+                          border: hasManual ? "1.5px solid #2563eb" : autoOre!=null ? "1.5px dashed #93c5fd" : "1.5px dashed #e5e7eb",
+                          background: hasManual ? "#eff6ff" : "transparent",
+                          display:"inline-block",minWidth:44}}
+                      >
+                        {ore > 0 ? `${ore}h` : <span style={{color:"#d1d5db"}}>—</span>}
+                      </span>
+                      {!hasManual && autoOre!=null && <span style={{fontSize:9,color:"#93c5fd",fontWeight:700,letterSpacing:".3px"}}>AUTO</span>}
+                      {hasManual && autoOre!=null && (
+                        <button onClick={()=>resetToAuto(emp.id)} title="Torna al calcolo automatico"
+                          style={{background:"none",border:"none",cursor:"pointer",fontSize:11,color:"#9ca3af",padding:"1px 3px",lineHeight:1}}
+                        >↺</button>
+                      )}
+                    </div>
                   )}
                 </td>
 
