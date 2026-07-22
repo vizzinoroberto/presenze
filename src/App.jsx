@@ -950,11 +950,42 @@ function AdminDashboard({ records, employees, onRecord, onUpdateRecord }) {
 }
 
 /* ── ADMIN REGISTRO ── */
-function AdminRegistro({ records, employees, onDeleteRecord }) {
-  const [empF,    setEmpF]    = useState("all");
-  const [rFrom,   setRFrom]   = useState(() => { const d=new Date(); d.setDate(1); return d.toISOString().split("T")[0]; });
-  const [rTo,     setRTo]     = useState(() => new Date().toISOString().split("T")[0]);
-  const [delRow,  setDelRow]  = useState(null); // row da confermare eliminazione
+function AdminRegistro({ records, employees, onDeleteRecord, onUpdateRecord }) {
+  const [empF,     setEmpF]    = useState("all");
+  const [rFrom,    setRFrom]   = useState(() => { const d=new Date(); d.setDate(1); return d.toISOString().split("T")[0]; });
+  const [rTo,      setRTo]     = useState(() => new Date().toISOString().split("T")[0]);
+  const [delRow,   setDelRow]  = useState(null);
+  const [editCell, setEditCell] = useState(null); // { rec, value:"HH:MM" }
+
+  const toTimeStr = d => `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+  const startEdit = (rec) => setEditCell({ rec, value: toTimeStr(rec.time) });
+  const commitEdit = () => {
+    if (!editCell) return;
+    const [h, m] = editCell.value.split(":").map(Number);
+    const newTime = new Date(editCell.rec.time);
+    newTime.setHours(h, m, 0, 0);
+    onUpdateRecord(editCell.rec, newTime);
+    setEditCell(null);
+  };
+  const TimeCell = ({ rec, bg }) => rec ? (
+    editCell?.rec?.id === rec.id ? (
+      <td style={{...td, background:bg, padding:"4px"}}>
+        <input type="time" value={editCell.value} autoFocus
+          onChange={e => setEditCell(p=>({...p, value:e.target.value}))}
+          onBlur={commitEdit}
+          onKeyDown={e=>{ if(e.key==="Enter") commitEdit(); if(e.key==="Escape") setEditCell(null); }}
+          style={{width:72,padding:"3px 5px",border:"1.5px solid #2563eb",borderRadius:5,fontSize:12,fontFamily:"Inter,sans-serif",textAlign:"center"}}
+        />
+      </td>
+    ) : (
+      <td onClick={() => startEdit(rec)} title="Clicca per modificare"
+        style={{...td, background:bg, fontSize:12, fontVariantNumeric:"tabular-nums", cursor:"pointer"}}
+        onMouseEnter={e=>e.currentTarget.style.background="#dbeafe"}
+        onMouseLeave={e=>e.currentTarget.style.background=bg}>
+        {fmtT(rec.time)}
+      </td>
+    )
+  ) : <td style={{...td, background:bg, fontSize:12}}>—</td>;
 
   const r30 = t => { const m=t.getMinutes(), h=t.getHours(); if(m<15) return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h,0,0,0); if(m<45) return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h,30,0,0); return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h+1,0,0,0); };
   const calcMinFromTimes = (da, a) => { if(!da||!a) return 0; return Math.max(0, Math.round((r30(a)-r30(da))/60000)); };
@@ -987,8 +1018,8 @@ function AdminRegistro({ records, employees, onDeleteRecord }) {
       const pairs = [];
       let lastIn = null;
       recs.forEach(r => {
-        if (r.type === "in") lastIn = r.time;
-        else if (r.type === "out" && lastIn) { pairs.push({ da: lastIn, a: r.time }); lastIn = null; }
+        if (r.type === "in") lastIn = r;
+        else if (r.type === "out" && lastIn) { pairs.push({ daRec: lastIn, aRec: r, da: lastIn.time, a: r.time }); lastIn = null; }
       });
       const t1 = pairs[0] || null;
       const t2 = pairs[1] || null;
@@ -1061,11 +1092,11 @@ function AdminRegistro({ records, employees, onDeleteRecord }) {
                     <span style={{marginRight:4}}>{r.empAvatar}</span>{r.empName}
                   </td>
                   <td style={{...td,color:"#6b7280",fontSize:11,textTransform:"capitalize"}}>{giorno}</td>
-                  <td style={{...td,background:"#f8fbff",fontSize:12,fontVariantNumeric:"tabular-nums"}}>{r.t1 ? fmtT(r.t1.da) : "—"}</td>
-                  <td style={{...td,background:"#f8fbff",fontSize:12,fontVariantNumeric:"tabular-nums"}}>{r.t1 ? fmtT(r.t1.a)  : "—"}</td>
+                  <TimeCell rec={r.t1?.daRec} bg="#f8fbff"/>
+                  <TimeCell rec={r.t1?.aRec}  bg="#f8fbff"/>
                   <td style={{...td,background:"#eff6ff",fontWeight:700,color:"#1d4ed8",fontSize:12,fontVariantNumeric:"tabular-nums"}}>{fmtMin(r.min1)}</td>
-                  <td style={{...td,background:"#f7fdf7",fontSize:12,fontVariantNumeric:"tabular-nums"}}>{r.t2 ? fmtT(r.t2.da) : "—"}</td>
-                  <td style={{...td,background:"#f7fdf7",fontSize:12,fontVariantNumeric:"tabular-nums"}}>{r.t2 ? fmtT(r.t2.a)  : "—"}</td>
+                  <TimeCell rec={r.t2?.daRec} bg="#f7fdf7"/>
+                  <TimeCell rec={r.t2?.aRec}  bg="#f7fdf7"/>
                   <td style={{...td,background:"#f0fdf4",fontWeight:700,color:"#15803d",fontSize:12,fontVariantNumeric:"tabular-nums"}}>{fmtMin(r.min2)}</td>
                   <td style={{...td,background:"#fefce8",fontWeight:800,color:"#854d0e",fontSize:12,fontVariantNumeric:"tabular-nums"}}>{fmtMin(r.min1+r.min2)}</td>
                   <td style={{...td,padding:"4px 2px"}}>
@@ -2335,7 +2366,7 @@ function AdminShell({ employees, records, setRecords, onLogout, onAdd, onEdit, o
       </div>
       <div className="page" style={{paddingTop:20}}>
         {tab==="dashboard"  && <AdminDashboard records={records} employees={employees} onRecord={onRecord} onUpdateRecord={onUpdateRecord}/>}
-        {tab==="registro"   && <AdminRegistro  records={records} employees={employees} onDeleteRecord={onDeleteRecord}/>}
+        {tab==="registro"   && <AdminRegistro  records={records} employees={employees} onDeleteRecord={onDeleteRecord} onUpdateRecord={onUpdateRecord}/>}
         {tab==="dipendenti" && <AdminDipendenti employees={employees} records={records} onAdd={onAdd} onEdit={onEdit} onDelete={onDelete}/>}
         {tab==="contratto"  && <AdminContratto  employees={employees} records={records}/>}
         {tab==="turni"      && <TurniAdmin employees={employees} turni={turni}/>}
