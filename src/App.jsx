@@ -173,6 +173,21 @@ function calcHours(recs, empId) {
   return Math.round(tot * 10) / 10;
 }
 
+// Arrotondamento entrata: <15→:00, 15-44→:30, ≥45→:00 ora succ.
+function r30in(t) {
+  const m=t.getMinutes(), h=t.getHours();
+  if (m<15)  return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h,  0,0,0);
+  if (m<45)  return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h, 30,0,0);
+             return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h+1, 0,0,0);
+}
+// Arrotondamento uscita: ≤24→:00, 25-54→:30, ≥55→:00 ora succ.
+function r30out(t) {
+  const m=t.getMinutes(), h=t.getHours();
+  if (m<=24) return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h,  0,0,0);
+  if (m<=54) return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h, 30,0,0);
+             return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h+1, 0,0,0);
+}
+
 function isCheckedIn(recs, empId) {
   const t = recs.filter(r => r.empId===empId && r.time>=today0()).sort((a,b)=>b.time-a.time);
   return t.length > 0 && t[0].type === "in";
@@ -557,13 +572,12 @@ function RiepilogoPeriodo({ records, employees, filterEmpId, from, to }) {
     .map(([key, d]) => {
       const empMap = {};
       d.recs.forEach(r => { if (!empMap[r.empId]) empMap[r.empId] = []; empMap[r.empId].push(r); });
-      const r30 = t => { const m=t.getMinutes(), h=t.getHours(); if(m<15) return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h,0,0,0); if(m<45) return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h,30,0,0); return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h+1,0,0,0); };
       let dayTotal = 0;
       Object.values(empMap).forEach(recs => {
         let lastIn = null;
         recs.sort((a,b) => a.time - b.time).forEach(r => {
           if (r.type==="in") lastIn = r.time;
-          else if (r.type==="out" && lastIn) { dayTotal += (r30(r.time) - r30(lastIn))/3600000; lastIn = null; }
+          else if (r.type==="out" && lastIn) { dayTotal += (r30out(r.time) - r30in(lastIn))/3600000; lastIn = null; }
         });
       });
       return { key, date: d.date, recs: d.recs.sort((a,b) => a.time - b.time), dayTotal: Math.max(0, Math.round(dayTotal*2)/2) };
@@ -701,8 +715,7 @@ function EmployeeScreen({ user, records, onRecord, onLogout, showToast, turni })
 
   function roundedHours(inTime, outTime) {
     if (!inTime || !outTime) return null;
-    const r30 = t => { const m=t.getMinutes(), h=t.getHours(); if(m<15) return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h,0,0,0); if(m<45) return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h,30,0,0); return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h+1,0,0,0); };
-    const diff = (r30(outTime) - r30(inTime)) / 3600000;
+    const diff = (r30out(outTime) - r30in(inTime)) / 3600000;
     return Math.max(0, Math.round(diff * 2) / 2);
   }
 
@@ -990,8 +1003,7 @@ function AdminRegistro({ records, employees, onDeleteRecord, onUpdateRecord }) {
     )
   ) : <td style={{...td, background:bg, fontSize:12}}>—</td>;
 
-  const r30 = t => { const m=t.getMinutes(), h=t.getHours(); if(m<15) return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h,0,0,0); if(m<45) return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h,30,0,0); return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h+1,0,0,0); };
-  const calcMinFromTimes = (da, a) => { if(!da||!a) return 0; return Math.max(0, Math.round((r30(a)-r30(da))/60000)); };
+  const calcMinFromTimes = (da, a) => { if(!da||!a) return 0; return Math.max(0, Math.round((r30out(a)-r30in(da))/60000)); };
   const fmtMin = m => { if(!m) return "—"; const h=Math.floor(m/60),min=m%60; return min>0?`${h}h${min.toString().padStart(2,"0")}`:`${h}h`; };
 
   // Costruisce righe (dipendente × giorno) dalle timbrature
@@ -1368,7 +1380,6 @@ function AdminDipendenti({ employees, records, onAdd, onEdit, onDelete }) {
   // Raggruppa timbrature per giorno per un dipendente
   function getDailyHours(empId) {
     const recs = records.filter(r => r.empId===empId).sort((a,b)=>a.time-b.time);
-    const r30 = t => { const m=t.getMinutes(), h=t.getHours(); if(m<15) return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h,0,0,0); if(m<45) return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h,30,0,0); return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h+1,0,0,0); };
     const days = {};
     let lastIn = null;
     recs.forEach(r => {
@@ -1377,7 +1388,7 @@ function AdminDipendenti({ employees, records, onAdd, onEdit, onDelete }) {
       days[day].entries.push(r);
       if (r.type==="in") { lastIn = r.time; if (!days[day].inTime) days[day].inTime = r.time; }
       else if (r.type==="out" && lastIn) {
-        days[day].hours += (r30(r.time) - r30(lastIn)) / 3600000;
+        days[day].hours += (r30out(r.time) - r30in(lastIn)) / 3600000;
         days[day].outTime = r.time;
         lastIn = null;
       }
@@ -1498,8 +1509,6 @@ function AdminPDF({ records, employees }) {
 
   const toggleEmp = id => setSelEmps(prev => { const n=new Set(prev); n.has(id)?n.delete(id):n.add(id); return n; });
 
-  const r30 = t => { const m=t.getMinutes(), h=t.getHours(); if(m<15) return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h,0,0,0); if(m<45) return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h,30,0,0); return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h+1,0,0,0); };
-
   const generate = () => {
     if (!from || !to || selEmps.size === 0) return;
     const fromD = new Date(from); fromD.setHours(0,0,0,0);
@@ -1513,7 +1522,7 @@ function AdminPDF({ records, employees }) {
         const day = fmtD(r.time);
         if (!dayMap[day]) dayMap[day] = { hours: 0 };
         if (r.type==="in") lastIn = r.time;
-        else if (r.type==="out" && lastIn) { dayMap[day].hours += (r30(r.time)-r30(lastIn))/3600000; lastIn=null; }
+        else if (r.type==="out" && lastIn) { dayMap[day].hours += (r30out(r.time)-r30in(lastIn))/3600000; lastIn=null; }
       });
       const days = Object.entries(dayMap)
         .sort((a,b) => new Date(a[0].split("/").reverse().join("-")) - new Date(b[0].split("/").reverse().join("-")))
@@ -2222,8 +2231,6 @@ function AdminContratto({ employees, records }) {
   const [editing,   setEditing]   = useState({}); // { empId: valore stringa in corso di modifica }
   const [loading,   setLoading]   = useState(false);
 
-  const r30 = t => { const m=t.getMinutes(),h=t.getHours(); if(m<15) return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h,0,0,0); if(m<45) return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h,30,0,0); return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h+1,0,0,0); };
-
   useEffect(() => {
     setLoading(true);
     sbFetch(`ore_contratto?mese=eq.${mese}&select=emp_id,ore_contratto`).then(data => {
@@ -2244,7 +2251,7 @@ function AdminContratto({ employees, records }) {
     let total=0, lastIn=null;
     recs.forEach(r => {
       if (r.type==="in") lastIn=r.time;
-      else if (r.type==="out" && lastIn) { total+=(r30(r.time)-r30(lastIn))/3600000; lastIn=null; }
+      else if (r.type==="out" && lastIn) { total+=(r30out(r.time)-r30in(lastIn))/3600000; lastIn=null; }
     });
     return Math.round(Math.max(0,total)*2)/2;
   };
