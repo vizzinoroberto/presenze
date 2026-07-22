@@ -2153,6 +2153,157 @@ function KioskScreen({ employees, records, onRecord, onAdminLogin, onRefresh }) 
   );
 }
 
+/* ── ADMIN CONTRATTO ── */
+function AdminContratto({ employees, records }) {
+  const [mese, setMese] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+  });
+  const [contratto, setContratto] = useState({}); // { empId: ore }
+  const [editing,   setEditing]   = useState({}); // { empId: valore stringa in corso di modifica }
+  const [loading,   setLoading]   = useState(false);
+
+  const r30 = t => { const m=t.getMinutes(),h=t.getHours(); if(m<15) return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h,0,0,0); if(m<45) return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h,30,0,0); return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h+1,0,0,0); };
+
+  useEffect(() => {
+    setLoading(true);
+    sbFetch(`ore_contratto?mese=eq.${mese}&select=emp_id,ore_contratto`).then(data => {
+      if (data) {
+        const map = {};
+        data.forEach(r => { map[r.emp_id] = parseFloat(r.ore_contratto); });
+        setContratto(map);
+      }
+      setLoading(false);
+    });
+  }, [mese]);
+
+  const workedHours = (empId) => {
+    const [y, m] = mese.split("-").map(Number);
+    const from = new Date(y, m-1, 1, 0,0,0,0);
+    const to   = new Date(y, m,   0, 23,59,59,999);
+    const recs = records.filter(r => r.empId===empId && r.time>=from && r.time<=to).sort((a,b)=>a.time-b.time);
+    let total=0, lastIn=null;
+    recs.forEach(r => {
+      if (r.type==="in") lastIn=r.time;
+      else if (r.type==="out" && lastIn) { total+=(r30(r.time)-r30(lastIn))/3600000; lastIn=null; }
+    });
+    return Math.round(Math.max(0,total)*2)/2;
+  };
+
+  const saveOre = async (empId, val) => {
+    const ore = parseFloat(String(val).replace(",",".")) || 0;
+    setContratto(p => ({...p, [empId]: ore}));
+    setEditing(p => { const n={...p}; delete n[empId]; return n; });
+    await sbFetch("ore_contratto", {
+      method: "POST",
+      headers: { "Prefer": "resolution=merge-duplicates,return=representation" },
+      body: JSON.stringify({ emp_id: empId, mese, ore_contratto: ore }),
+    });
+  };
+
+  const meseLabel = new Date(mese+"-15").toLocaleDateString("it-IT",{month:"long",year:"numeric"});
+  const prevMese = () => { const [y,m]=mese.split("-").map(Number); const d=new Date(y,m-2,1); setMese(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`); };
+  const nextMese = () => { const [y,m]=mese.split("-").map(Number); const d=new Date(y,m,  1); setMese(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`); };
+
+  const fmtH = h => h > 0 ? `${h}h` : "—";
+  const fmtDiff = d => d > 0 ? `+${d}h` : d < 0 ? `${d}h` : "0h";
+
+  let totContratto=0, totLavorato=0;
+  const rows = employees.map(emp => {
+    const ore   = contratto[emp.id] || 0;
+    const lav   = workedHours(emp.id);
+    const diff  = Math.round((lav - ore)*2)/2;
+    totContratto += ore;
+    totLavorato  += lav;
+    return { emp, ore, lav, diff };
+  });
+  const totDiff = Math.round((totLavorato - totContratto)*2)/2;
+
+  return <>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
+      <div style={{fontWeight:800,fontSize:20,color:"#111827",letterSpacing:"-.3px"}}>Ore Contratto vs Lavorate</div>
+      <div style={{display:"flex",alignItems:"center",gap:8}}>
+        <button onClick={prevMese} className="week-nav-btn">← Prec</button>
+        <div style={{fontWeight:700,fontSize:14,color:"#111827",textTransform:"capitalize",minWidth:130,textAlign:"center"}}>{meseLabel}</div>
+        <button onClick={nextMese} className="week-nav-btn">Succ →</button>
+      </div>
+    </div>
+
+    {loading ? (
+      <div style={{textAlign:"center",padding:"40px",color:"#9ca3af",fontSize:14}}>Caricamento…</div>
+    ) : (
+      <div style={{background:"#fff",borderRadius:12,boxShadow:"0 1px 3px rgba(0,0,0,.06)",overflow:"hidden"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontFamily:"Inter,sans-serif"}}>
+          <thead>
+            <tr style={{background:"#f9fafb"}}>
+              <th style={{padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:".4px",borderBottom:"2px solid #e5e7eb"}}>Dipendente</th>
+              <th style={{padding:"10px 8px",textAlign:"center",fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:".4px",borderBottom:"2px solid #e5e7eb",background:"#eff6ff",color:"#1d4ed8"}}>Ore contratto</th>
+              <th style={{padding:"10px 8px",textAlign:"center",fontSize:11,fontWeight:700,color:"#15803d",textTransform:"uppercase",letterSpacing:".4px",borderBottom:"2px solid #e5e7eb",background:"#f0fdf4"}}>Ore lavorate</th>
+              <th style={{padding:"10px 8px",textAlign:"center",fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:".4px",borderBottom:"2px solid #e5e7eb"}}>Differenza</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(({emp, ore, lav, diff}) => (
+              <tr key={emp.id} style={{borderBottom:"1px solid #f3f4f6"}}>
+                <td style={{padding:"10px 14px",fontWeight:600,fontSize:13,color:"#111827"}}>
+                  <span style={{marginRight:6}}>{emp.avatar}</span>{emp.name}
+                  {emp.role && <span style={{fontSize:11,color:"#9ca3af",marginLeft:6}}>{emp.role}</span>}
+                </td>
+
+                {/* Ore contratto — cella inline editabile */}
+                <td style={{padding:"8px",textAlign:"center",background:"#f8fbff"}}>
+                  {editing[emp.id] !== undefined ? (
+                    <input
+                      type="number" step="0.5" min="0" max="999"
+                      value={editing[emp.id]}
+                      onChange={e => setEditing(p=>({...p,[emp.id]:e.target.value}))}
+                      onBlur={e => saveOre(emp.id, e.target.value)}
+                      onKeyDown={e => { if(e.key==="Enter") saveOre(emp.id, editing[emp.id]); if(e.key==="Escape") setEditing(p=>{const n={...p};delete n[emp.id];return n;}); }}
+                      autoFocus
+                      style={{width:70,padding:"4px 6px",borderRadius:6,border:"1.5px solid #2563eb",textAlign:"center",fontSize:13,fontFamily:"Inter,sans-serif",fontVariantNumeric:"tabular-nums"}}
+                    />
+                  ) : (
+                    <span
+                      onClick={() => setEditing(p=>({...p,[emp.id]: ore||""}))}
+                      title="Clicca per modificare"
+                      style={{cursor:"pointer",fontSize:13,fontWeight:700,color:"#1d4ed8",fontVariantNumeric:"tabular-nums",padding:"4px 10px",borderRadius:6,border:"1.5px dashed #bfdbfe",display:"inline-block",minWidth:50}}
+                    >{ore > 0 ? `${ore}h` : <span style={{color:"#d1d5db"}}>—</span>}</span>
+                  )}
+                </td>
+
+                <td style={{padding:"10px 8px",textAlign:"center",background:"#f7fdf7",fontSize:13,fontWeight:700,color:"#15803d",fontVariantNumeric:"tabular-nums"}}>
+                  {fmtH(lav)}
+                </td>
+
+                <td style={{padding:"10px 8px",textAlign:"center",fontSize:14,fontWeight:800,fontVariantNumeric:"tabular-nums",
+                  color: diff > 0 ? "#15803d" : diff < 0 ? "#dc2626" : "#6b7280",
+                  background: diff > 0 ? "#f0fdf4" : diff < 0 ? "#fff1f2" : "transparent",
+                }}>
+                  {ore > 0 || lav > 0 ? fmtDiff(diff) : "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr style={{background:"#f9fafb",borderTop:"2px solid #e5e7eb"}}>
+              <td style={{padding:"10px 14px",fontWeight:700,fontSize:13,color:"#111827"}}>Totale</td>
+              <td style={{padding:"10px 8px",textAlign:"center",fontWeight:800,fontSize:13,color:"#1d4ed8",background:"#eff6ff",fontVariantNumeric:"tabular-nums"}}>{totContratto > 0 ? `${totContratto}h` : "—"}</td>
+              <td style={{padding:"10px 8px",textAlign:"center",fontWeight:800,fontSize:13,color:"#15803d",background:"#f0fdf4",fontVariantNumeric:"tabular-nums"}}>{fmtH(totLavorato)}</td>
+              <td style={{padding:"10px 8px",textAlign:"center",fontWeight:800,fontSize:14,fontVariantNumeric:"tabular-nums",
+                color: totDiff>0?"#15803d":totDiff<0?"#dc2626":"#6b7280",
+                background: totDiff>0?"#f0fdf4":totDiff<0?"#fff1f2":"transparent",
+              }}>{totContratto > 0 || totLavorato > 0 ? fmtDiff(totDiff) : "—"}</td>
+            </tr>
+          </tfoot>
+        </table>
+        <div style={{padding:"10px 14px",fontSize:11,color:"#9ca3af"}}>
+          💡 Clicca sulle ore contratto per modificarle — i valori vengono salvati su Supabase per mese.
+        </div>
+      </div>
+    )}
+  </>;
+}
+
 /* ── ADMIN SHELL ── */
 function AdminShell({ employees, records, setRecords, onLogout, onAdd, onEdit, onDelete, turni, onRecord, onUpdateRecord, onDeleteRecord, onRefresh }) {
   const [tab, setTab] = useState("dashboard");
@@ -2168,7 +2319,7 @@ function AdminShell({ employees, records, setRecords, onLogout, onAdd, onEdit, o
         <div className="topbar-inner">
           <div className="topbar-brand"><div className="topbar-brand-dot"/>Presenze</div>
           <div className="tab-nav">
-            {[["dashboard","Dashboard"],["registro","Registro"],["dipendenti","Dipendenti"],["turni","Turni"],["pdf","PDF"],["orario","Orario manuale"]].map(([id,l])=>(
+            {[["dashboard","Dashboard"],["registro","Registro"],["dipendenti","Dipendenti"],["contratto","Contratto"],["turni","Turni"],["pdf","PDF"],["orario","Orario manuale"]].map(([id,l])=>(
               <button key={id} className={`tab-btn ${tab===id?"active":""}`} onClick={()=>setTab(id)}>{l}</button>
             ))}
           </div>
@@ -2186,6 +2337,7 @@ function AdminShell({ employees, records, setRecords, onLogout, onAdd, onEdit, o
         {tab==="dashboard"  && <AdminDashboard records={records} employees={employees} onRecord={onRecord} onUpdateRecord={onUpdateRecord}/>}
         {tab==="registro"   && <AdminRegistro  records={records} employees={employees} onDeleteRecord={onDeleteRecord}/>}
         {tab==="dipendenti" && <AdminDipendenti employees={employees} records={records} onAdd={onAdd} onEdit={onEdit} onDelete={onDelete}/>}
+        {tab==="contratto"  && <AdminContratto  employees={employees} records={records}/>}
         {tab==="turni"      && <TurniAdmin employees={employees} turni={turni}/>}
         {tab==="pdf"        && <AdminPDF        records={records} employees={employees}/>}
         {tab==="orario"     && <AdminOrarioManuale employees={employees}/>}
