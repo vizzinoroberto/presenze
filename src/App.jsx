@@ -950,10 +950,11 @@ function AdminDashboard({ records, employees, onRecord, onUpdateRecord }) {
 }
 
 /* ── ADMIN REGISTRO ── */
-function AdminRegistro({ records, employees }) {
-  const [empF,  setEmpF]  = useState("all");
-  const [rFrom, setRFrom] = useState(() => { const d=new Date(); d.setDate(1); return d.toISOString().split("T")[0]; });
-  const [rTo,   setRTo]   = useState(() => new Date().toISOString().split("T")[0]);
+function AdminRegistro({ records, employees, onDeleteRecord }) {
+  const [empF,    setEmpF]    = useState("all");
+  const [rFrom,   setRFrom]   = useState(() => { const d=new Date(); d.setDate(1); return d.toISOString().split("T")[0]; });
+  const [rTo,     setRTo]     = useState(() => new Date().toISOString().split("T")[0]);
+  const [delRow,  setDelRow]  = useState(null); // row da confermare eliminazione
 
   const r30 = t => { const m=t.getMinutes(), h=t.getHours(); if(m<15) return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h,0,0,0); if(m<45) return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h,30,0,0); return new Date(t.getFullYear(),t.getMonth(),t.getDate(),h+1,0,0,0); };
   const calcMinFromTimes = (da, a) => { if(!da||!a) return 0; return Math.max(0, Math.round((r30(a)-r30(da))/60000)); };
@@ -995,7 +996,7 @@ function AdminRegistro({ records, employees }) {
       const extraMin = pairs.slice(2).reduce((s,p) => s + calcMinFromTimes(p.da, p.a), 0);
       const min1 = calcMinFromTimes(t1?.da, t1?.a);
       const min2 = calcMinFromTimes(t2?.da, t2?.a) + extraMin;
-      return { empId, empName: emp?.name || "—", empAvatar: emp?.avatar || "👤", dateStr, t1, t2, min1, min2 };
+      return { empId, empName: emp?.name || "—", empAvatar: emp?.avatar || "👤", dateStr, t1, t2, min1, min2, recs };
     }).sort((a,b) => a.dateStr.localeCompare(b.dateStr) || a.empName.localeCompare(b.empName));
   })();
 
@@ -1025,14 +1026,16 @@ function AdminRegistro({ records, employees }) {
         <div style={{fontWeight:600,fontSize:14}}>Nessuna timbratura nel periodo selezionato</div>
       </div>
     ) : (
+      <>
       <div className="table-wrap">
         <table style={{width:"100%",borderCollapse:"collapse",tableLayout:"fixed"}}>
           <colgroup>
-            <col style={{width:"16%"}}/>
-            <col style={{width:"9%"}}/>
-            <col style={{width:"9%"}}/><col style={{width:"9%"}}/><col style={{width:"7%"}}/>
-            <col style={{width:"9%"}}/><col style={{width:"9%"}}/><col style={{width:"7%"}}/>
+            <col style={{width:"15%"}}/>
             <col style={{width:"8%"}}/>
+            <col style={{width:"8%"}}/><col style={{width:"8%"}}/><col style={{width:"7%"}}/>
+            <col style={{width:"8%"}}/><col style={{width:"8%"}}/><col style={{width:"7%"}}/>
+            <col style={{width:"7%"}}/>
+            <col style={{width:"4%"}}/>
           </colgroup>
           <thead>
             <tr style={{background:"#f9fafb"}}>
@@ -1045,6 +1048,7 @@ function AdminRegistro({ records, employees }) {
               <th style={{...th,background:"#f0fdf4"}}>A</th>
               <th style={{...th,background:"#dcfce7",color:"#15803d"}}>Tot</th>
               <th style={{...th,background:"#fef9c3",color:"#854d0e"}}>Gran Tot</th>
+              <th style={th}/>
             </tr>
           </thead>
           <tbody>
@@ -1064,6 +1068,13 @@ function AdminRegistro({ records, employees }) {
                   <td style={{...td,background:"#f7fdf7",fontSize:12,fontVariantNumeric:"tabular-nums"}}>{r.t2 ? fmtT(r.t2.a)  : "—"}</td>
                   <td style={{...td,background:"#f0fdf4",fontWeight:700,color:"#15803d",fontSize:12,fontVariantNumeric:"tabular-nums"}}>{fmtMin(r.min2)}</td>
                   <td style={{...td,background:"#fefce8",fontWeight:800,color:"#854d0e",fontSize:12,fontVariantNumeric:"tabular-nums"}}>{fmtMin(r.min1+r.min2)}</td>
+                  <td style={{...td,padding:"4px 2px"}}>
+                    <button onClick={() => setDelRow(r)} title="Elimina timbrature"
+                      style={{background:"none",border:"none",cursor:"pointer",color:"#d1d5db",fontSize:13,lineHeight:1,padding:"2px 4px",borderRadius:4,transition:"color .15s"}}
+                      onMouseEnter={e=>e.currentTarget.style.color="#ef4444"}
+                      onMouseLeave={e=>e.currentTarget.style.color="#d1d5db"}
+                    >✕</button>
+                  </td>
                 </tr>
               );
             })}
@@ -1074,10 +1085,29 @@ function AdminRegistro({ records, employees }) {
                 Totale periodo
               </td>
               <td style={{padding:"10px 6px",textAlign:"center",fontWeight:800,color:"#854d0e",fontSize:15,borderTop:"2px solid #e5e7eb",fontVariantNumeric:"tabular-nums",background:"#fef9c3"}}>{fmtMin(grandTotal)}</td>
+              <td style={{borderTop:"2px solid #e5e7eb"}}/>
             </tr>
           </tfoot>
         </table>
       </div>
+
+      {delRow && (
+        <div className="modal-ov" onClick={e=>e.target===e.currentTarget&&setDelRow(null)}>
+          <div className="modal-box" style={{maxWidth:320,textAlign:"center"}}>
+            <div style={{fontSize:32,marginBottom:8}}>🗑️</div>
+            <div className="modal-title">Elimina timbrature?</div>
+            <p style={{fontSize:13,color:"#6b7280",marginBottom:18}}>
+              Verranno eliminate tutte le {delRow.recs.length} timbrature di<br/>
+              <strong>{delRow.empName}</strong> del giorno <strong>{new Date(delRow.dateStr+"T00:00:00").toLocaleDateString("it-IT",{day:"2-digit",month:"2-digit",year:"numeric"})}</strong>.
+            </p>
+            <div className="modal-btns">
+              <button className="m-btn cx" onClick={()=>setDelRow(null)}>Annulla</button>
+              <button className="m-btn red" onClick={()=>{ delRow.recs.forEach(rec=>onDeleteRecord(rec.id)); setDelRow(null); }}>Elimina</button>
+            </div>
+          </div>
+        </div>
+      )}
+      </>
     )}
   </>;
 }
@@ -1990,7 +2020,7 @@ function KioskScreen({ employees, records, onRecord, onAdminLogin, onRefresh }) 
 }
 
 /* ── ADMIN SHELL ── */
-function AdminShell({ employees, records, setRecords, onLogout, onAdd, onEdit, onDelete, turni, onRecord, onUpdateRecord, onRefresh }) {
+function AdminShell({ employees, records, setRecords, onLogout, onAdd, onEdit, onDelete, turni, onRecord, onUpdateRecord, onDeleteRecord, onRefresh }) {
   const [tab, setTab] = useState("dashboard");
   const [refreshing, setRefreshing] = useState(false);
   const handleRefresh = async () => {
@@ -2020,7 +2050,7 @@ function AdminShell({ employees, records, setRecords, onLogout, onAdd, onEdit, o
       </div>
       <div className="page" style={{paddingTop:20}}>
         {tab==="dashboard"  && <AdminDashboard records={records} employees={employees} onRecord={onRecord} onUpdateRecord={onUpdateRecord}/>}
-        {tab==="registro"   && <AdminRegistro  records={records} employees={employees}/>}
+        {tab==="registro"   && <AdminRegistro  records={records} employees={employees} onDeleteRecord={onDeleteRecord}/>}
         {tab==="dipendenti" && <AdminDipendenti employees={employees} records={records} onAdd={onAdd} onEdit={onEdit} onDelete={onDelete}/>}
         {tab==="turni"      && <TurniAdmin employees={employees} turni={turni}/>}
         {tab==="pdf"        && <AdminPDF        records={records} employees={employees}/>}
@@ -2078,6 +2108,11 @@ export default function App() {
     }
   };
 
+  const deleteRecord = async (id) => {
+    setRecords(p => p.filter(r => r.id !== id));
+    await dbDeleteRecord(id);
+  };
+
   const updateRecord = async (rec, newTime) => {
     setRecords(p => p.map(r => r.id===rec.id ? {...r, time: newTime} : r));
     await dbUpdateRecordTime(rec, newTime);
@@ -2133,7 +2168,7 @@ export default function App() {
           employees={employees} records={records} setRecords={setRecords}
           onLogout={()=>setUser(null)}
           onAdd={addEmp} onEdit={editEmp} onDelete={deleteEmp}
-          turni={turni} onRecord={addRecord} onUpdateRecord={updateRecord}
+          turni={turni} onRecord={addRecord} onUpdateRecord={updateRecord} onDeleteRecord={deleteRecord}
           onRefresh={refreshData}
         />
       )}
