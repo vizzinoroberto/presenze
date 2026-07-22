@@ -1159,7 +1159,7 @@ function EmpModal({ emp, onSave, onClose }) {
     if (v > 0) s[day] = v; else delete s[day];
     set("schedule", s);
   };
-  const save = () => { if(!f.name.trim()||!f.pin.trim()) return; onSave(isNew?{...f,id:Date.now()}:f); };
+  const save = () => { if(!f.name.trim() || (isNew && !f.pin.trim())) return; onSave(isNew?{...f,id:Date.now()}:f); };
 
   return (
     <div className="modal-ov" onClick={e=>e.target===e.currentTarget&&onClose()}>
@@ -2321,7 +2321,7 @@ function AdminContratto({ employees, records }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map(({emp, ore, lav, diff}) => (
+            {rows.map(({emp, ore, lav, diff, autoOre, hasManual}) => (
               <tr key={emp.id} style={{borderBottom:"1px solid #f3f4f6"}}>
                 <td style={{padding:"10px 14px",fontWeight:600,fontSize:13,color:"#111827"}}>
                   <span style={{marginRight:6}}>{emp.avatar}</span>{emp.name}
