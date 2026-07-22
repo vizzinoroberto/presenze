@@ -1170,11 +1170,141 @@ function EmpModal({ emp, onSave, onClose }) {
   );
 }
 
+/* ── DIPENDENTI PDF MODAL ── */
+const DIP_FIELDS = [
+  { id:"avatar",   label:"Avatar/Emoji" },
+  { id:"role",     label:"Ruolo" },
+  { id:"dept",     label:"Reparto" },
+  { id:"email",    label:"Email" },
+  { id:"phone",    label:"Telefono" },
+  { id:"target",   label:"Ore target/giorno" },
+  { id:"in_turni", label:"Incluso nei Turni" },
+  { id:"in_kiosk", label:"Visibile nel Kiosk" },
+  { id:"pin",      label:"PIN (⚠️ cifrato — mostra solo ✓/✗)" },
+];
+
+function buildDipendentiPDF(employees, cols, title) {
+  const colDefs = [
+    { id:"name",     head:"Nome" },
+    ...DIP_FIELDS.filter(f => cols.includes(f.id)).map(f => ({ id:f.id, head:f.label })),
+  ];
+  const cell = (emp, id) => {
+    if (id === "avatar")   return `<span style="font-size:20px">${emp.avatar}</span>`;
+    if (id === "target")   return `${emp.target}h`;
+    if (id === "in_turni") return emp.in_turni ? "✓" : "—";
+    if (id === "in_kiosk") return emp.in_kiosk !== false ? "✓" : "—";
+    if (id === "pin")      return emp.pin_set ? "<span style='color:#16a34a;font-weight:700'>✓</span>" : "<span style='color:#9ca3af'>—</span>";
+    if (id === "name")     return `<strong>${emp.name}</strong>`;
+    return emp[id] || "—";
+  };
+  return `<!DOCTYPE html><html><head><meta charset="utf-8">
+  <title>${title}</title>
+  <style>
+    body{font-family:Arial,sans-serif;font-size:11px;color:#111;margin:0;padding:20px}
+    h1{font-size:16px;font-weight:700;margin:0 0 4px}
+    .sub{font-size:10px;color:#6b7280;margin-bottom:14px}
+    table{width:100%;border-collapse:collapse;margin-top:8px}
+    th{background:#1e293b;color:#fff;padding:7px 8px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.4px}
+    td{padding:7px 8px;border-bottom:1px solid #e5e7eb;vertical-align:middle}
+    tr:nth-child(even) td{background:#f9fafb}
+    .note{font-size:9px;color:#9ca3af;margin-top:12px}
+    @media print{@page{margin:15mm}}
+  </style></head><body>
+  <h1>${title}</h1>
+  <div class="sub">Generato il ${new Date().toLocaleDateString("it-IT",{day:"2-digit",month:"long",year:"numeric"})} — ${employees.length} dipendenti</div>
+  <table>
+    <thead><tr>${colDefs.map(c=>`<th>${c.head}</th>`).join("")}</tr></thead>
+    <tbody>${employees.map(e=>`<tr>${colDefs.map(c=>`<td>${cell(e,c.id)}</td>`).join("")}</tr>`).join("")}</tbody>
+  </table>
+  ${cols.includes("pin") ? '<p class="note">⚠️ La colonna PIN mostra solo se un PIN è stato impostato. Il valore originale non è recuperabile (memorizzato cifrato).</p>' : ""}
+  </body></html>`;
+}
+
+function DipendentiPDFModal({ employees, onClose }) {
+  const [mode,    setMode]    = useState("full");
+  const [fields,  setFields]  = useState(new Set(["avatar","role","dept","email","phone","target","in_turni","in_kiosk"]));
+  const [loading, setLoading] = useState(false);
+
+  const toggle = id => setFields(p => { const s=new Set(p); s.has(id)?s.delete(id):s.add(id); return s; });
+
+  const generate = async () => {
+    setLoading(true);
+    try {
+      let emps = employees;
+      const needPin = mode==="full" || fields.has("pin");
+      if (needPin) {
+        const data = await sbFetch("dipendenti?select=id,pin&order=name");
+        if (data) {
+          const pm = {};
+          data.forEach(r => { pm[r.id] = r.pin!=null && r.pin!==""; });
+          emps = employees.map(e => ({ ...e, pin_set: pm[e.id]||false }));
+        }
+      }
+      const cols = mode==="full"
+        ? DIP_FIELDS.map(f=>f.id)
+        : [...fields];
+      const title = mode==="full" ? "Elenco Dipendenti — Scheda Completa" : "Elenco Dipendenti";
+      const html = buildDipendentiPDF(emps, cols, title);
+      const win = window.open("","_blank");
+      win.document.write(html);
+      win.document.close();
+      setTimeout(()=>win.print(), 250);
+    } finally { setLoading(false); }
+  };
+
+  return (
+    <div className="modal-ov" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="modal-box" style={{maxWidth:480}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
+          <div style={{fontWeight:800,fontSize:17,color:"#111827"}}>📄 Stampa PDF Dipendenti</div>
+          <button onClick={onClose} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9ca3af"}}>×</button>
+        </div>
+
+        {/* Mode selector */}
+        <div style={{display:"flex",gap:8,marginBottom:18}}>
+          {[["full","Scheda completa"],["custom","Lista personalizzata"]].map(([v,l])=>(
+            <button key={v} onClick={()=>setMode(v)} style={{flex:1,padding:"10px",borderRadius:10,border:`2px solid ${mode===v?"#2563eb":"#e5e7eb"}`,background:mode===v?"#eff6ff":"#fff",color:mode===v?"#1d4ed8":"#374151",fontFamily:"Inter,sans-serif",fontWeight:700,fontSize:13,cursor:"pointer",transition:"all .12s"}}>
+              {l}
+            </button>
+          ))}
+        </div>
+
+        {mode==="full" && (
+          <div style={{background:"#f9fafb",borderRadius:10,padding:"12px 14px",marginBottom:18,fontSize:12,color:"#6b7280",lineHeight:1.6}}>
+            Stampa una tabella con tutti i campi: avatar, nome, ruolo, reparto, email, telefono, ore target, turni, kiosk e stato PIN.
+          </div>
+        )}
+
+        {mode==="custom" && (
+          <div style={{marginBottom:18}}>
+            <div style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:".4px",marginBottom:10}}>Campi da includere</div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {DIP_FIELDS.map(f=>(
+                <label key={f.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:fields.has(f.id)?"#eff6ff":"#f9fafb",border:`1.5px solid ${fields.has(f.id)?"#bfdbfe":"#e5e7eb"}`,borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:500,userSelect:"none",transition:"all .12s"}}>
+                  <input type="checkbox" checked={fields.has(f.id)} onChange={()=>toggle(f.id)} style={{width:15,height:15,accentColor:"#2563eb",cursor:"pointer"}}/>
+                  {f.label}
+                </label>
+              ))}
+            </div>
+            <div style={{fontSize:10,color:"#9ca3af",marginTop:8}}>La colonna <strong>Nome</strong> è sempre inclusa.</div>
+          </div>
+        )}
+
+        <button onClick={generate} disabled={loading||(mode==="custom"&&fields.size===0)}
+          style={{width:"100%",padding:"13px",borderRadius:10,border:"none",background:(loading||(mode==="custom"&&fields.size===0))?"#e5e7eb":"#2563eb",color:(loading||(mode==="custom"&&fields.size===0))?"#9ca3af":"#fff",fontFamily:"Inter,sans-serif",fontSize:14,fontWeight:700,cursor:"pointer",transition:"all .15s"}}>
+          {loading ? "Generazione…" : "📄 Genera PDF"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /* ── ADMIN DIPENDENTI ── */
 function AdminDipendenti({ employees, records, onAdd, onEdit, onDelete }) {
   const [modal,   setModal]   = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [detail,  setDetail]  = useState(null); // emp per il pannello dettaglio
+  const [showPDF, setShowPDF] = useState(false);
 
   // Raggruppa timbrature per giorno per un dipendente
   function getDailyHours(empId) {
@@ -1200,7 +1330,10 @@ function AdminDipendenti({ employees, records, onAdd, onEdit, onDelete }) {
   return <>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
       <div style={{fontWeight:800,fontSize:20,color:"#111827",letterSpacing:"-.3px"}}>Gestione Dipendenti</div>
-      <button className="fi-btn" onClick={()=>setModal("new")} style={{padding:"8px 16px",borderRadius:9,fontSize:13}}>+ Nuovo</button>
+      <div style={{display:"flex",gap:8}}>
+        <button className="fi-btn sec" onClick={()=>setShowPDF(true)} style={{padding:"8px 14px",borderRadius:9,fontSize:13}}>📄 Stampa PDF</button>
+        <button className="fi-btn" onClick={()=>setModal("new")} style={{padding:"8px 16px",borderRadius:9,fontSize:13}}>+ Nuovo</button>
+      </div>
     </div>
     <div className="emp-cards">
       {employees.map(emp=>{
@@ -1240,6 +1373,7 @@ function AdminDipendenti({ employees, records, onAdd, onEdit, onDelete }) {
     </div>
 
     {modal&&<EmpModal emp={modal==="new"?null:modal} onSave={d=>{modal==="new"?onAdd(d):onEdit(d);setModal(null);}} onClose={()=>setModal(null)}/>}
+    {showPDF&&<DipendentiPDFModal employees={employees} onClose={()=>setShowPDF(false)}/>}
 
     {detail&&(
       <div className="modal-ov" onClick={e=>e.target===e.currentTarget&&setDetail(null)}>
